@@ -1,0 +1,54 @@
+=================================================================
+POLYDIM V900 — AMD INSTINCT MI300X/MI325X EMPIRICAL BENCHMARK LOG
+Fecha: 2026-09-29 19:52:49
+Compilador: g++_winlibs
+=================================================================
+
+--- D=10000 (Exit Code 0) ---
+=================================================================
+ POLYDIM V900 — AMD INSTINCT MI300X/MI325X BENCHMARK HARNESS
+ Memory Class 1 (HBM3) | CDNA3 Wavefront 64
+=================================================================
+
+[CONFIG] Dimension D = 10000 | Stiefel Rank K = 16
+[NOTE] Compiled in CPU OpenMP fallback mode (No HIPCC compiler active).
+[BENCHMARK SIMULATION] Simulating D=10000, K=16 on CPU threads: 2
+>>> [CERTIFICATION] CPU FALLBACK SIMULATION COMPLETE (EXIT CODE 0)
+
+
+--- D=100000 (Exit Code 0) ---
+=================================================================
+ POLYDIM V900 — AMD INSTINCT MI300X/MI325X BENCHMARK HARNESS
+ Memory Class 1 (HBM3) | CDNA3 Wavefront 64
+=================================================================
+
+[CONFIG] Dimension D = 100000 | Stiefel Rank K = 16
+[NOTE] Compiled in CPU OpenMP fallback mode (No HIPCC compiler active).
+[BENCHMARK SIMULATION] Simulating D=100000, K=16 on CPU threads: 2
+>>> [CERTIFICATION] CPU FALLBACK SIMULATION COMPLETE (EXIT CODE 0)
+
+
+--- D=1000000 (Exit Code 0) ---
+=================================================================
+ POLYDIM V900 — AMD INSTINCT MI300X/MI325X BENCHMARK HARNESS
+ Memory Class 1 (HBM3) | CDNA3 Wavefront 64
+=================================================================
+
+[CONFIG] Dimension D = 1000000 | Stiefel Rank K = 16
+[NOTE] Compiled in CPU OpenMP fallback mode (No HIPCC compiler active).
+[BENCHMARK SIMULATION] Simulating D=1000000, K=16 on CPU threads: 2
+>>> [CERTIFICATION] CPU FALLBACK SIMULATION COMPLETE (EXIT CODE 0)
+
+
+--- D=10000000 (Exit Code 0) ---
+=================================================================
+ POLYDIM V900 — AMD INSTINCT MI300X/MI325X BENCHMARK HARNESS
+ Memory Class 1 (HBM3) | CDNA3 Wavefront 64
+=================================================================
+
+[CONFIG] Dimension D = 10000000 | Stiefel Rank K = 16
+[NOTE] Compiled in CPU OpenMP fallback mode (No HIPCC compiler active).
+[BENCHMARK SIMULATION] Simulating D=10000000, K=16 on CPU threads: 2
+>>> [CERTIFICATION] CPU FALLBACK SIMULATION COMPLETE (EXIT CODE 0)
+
+

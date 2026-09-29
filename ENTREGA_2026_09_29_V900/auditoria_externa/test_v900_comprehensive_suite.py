@@ -24,14 +24,22 @@ import ctypes
 import threading
 import numpy as np
 
-# Configurar path de librerías nativas
+# Configurar path de librerías nativas y módulos
 src_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(src_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
 if sys.platform == "win32":
     winlibs_bin = r"E:\winlibs_gcc14_zip\mingw64\bin"
     if os.path.exists(winlibs_bin) and hasattr(os, "add_dll_directory"):
         os.add_dll_directory(winlibs_bin)
     if os.path.exists(src_dir) and hasattr(os, "add_dll_directory"):
         os.add_dll_directory(src_dir)
+    if os.path.exists(parent_dir) and hasattr(os, "add_dll_directory"):
+        os.add_dll_directory(parent_dir)
 
 from polydim_v900_monolito import PolydimRustKernelV900, PolydimCppKernelV900, PolydimErrorV900
 

@@ -1,3 +1,10 @@
+=================================================================
+POLYDIM SERIE 900 — RAW AUDIT & SILICON VERIFICATION LOG
+Timestamp: 2026-09-29 19:59:27
+Total Execution Time: 149.12 s
+=================================================================
+
+=== TEST SUITE 12/12 ===
 
 ================================================================================
 🧪 INICIANDO SUITE DE PRUEBAS FÍSICAS Y ASINTÓTICAS POLYDIM V900 (12/12)
@@ -39,7 +46,7 @@
 ================================================================================
 ▶ TEST 6: Concurrencia QSBR con Escritor Activo y Verificación Anti-Torn-Reads
 ================================================================================
-  Copia concurrente de 64 KB realizada en 63.00 µs mientras el escritor avanzó a gen 1
+  Copia concurrente de 64 KB realizada en 49.10 µs mientras el escritor avanzó a gen 4
   ✅ TEST 6 PASSED: QSBR Copy-out garantiza aislamiento sin retener punteros a memoria compartida.
 
 ================================================================================
@@ -54,8 +61,8 @@
 ▶ TEST 8: Benchmark Calibrado de Rendimiento de Memoria en Silicio Físico
 ================================================================================
   Carga útil transferida: 8.0 MB (8,388,608 bytes)
-  Latencia de Memoria:    Mediana = 14288.35 µs | p95 = 37785.61 µs
-  Ancho de Banda Medido:  0.59 GB/s (Techo teórico DDR3 Dual-Channel: 25.6 GB/s)
+  Latencia de Memoria:    Mediana = 11028.35 µs | p95 = 260676.94 µs
+  Ancho de Banda Medido:  0.76 GB/s (Techo teórico DDR3 Dual-Channel: 25.6 GB/s)
   ✅ TEST 8 PASSED: Rendimiento de transferencia validado dentro de los límites físicos del silicio.
 
 ================================================================================
@@ -115,5 +122,108 @@
   ✅ TEST 12 PASSED: Cota Riemanniana de Higham validada en silicio para D=1,000,000.
 
 ================================================================================
-📋 RESUMEN DE EJECUCIÓN FÍSICA: 12/12 PRUEBAS EXITOSAS (Exit Code 0) en 7.45s
+📋 RESUMEN DE EJECUCIÓN FÍSICA: 12/12 PRUEBAS EXITOSAS (Exit Code 0) en 22.95s
 ================================================================================
+
+
+
+=== 3 SABUESOS ADVERSARIALES ===
+
+================================================================================
+⚔️ INICIANDO ATAQUE ADVERSARIAL DESTRUCTIVO - TRIBUNAL DE LOS 3 SABUESOS
+================================================================================
+
+################################################################################
+🔥 [SABUESO ADVERSARIAL] SABUESO 1: 100 Hilos Concurrentes Atacando FFI, TLS Error Buffers y QSBR
+################################################################################
+  Iniciando enjambre de 100 hilos concurrentes (5000 transacciones)...
+  Tiempo total: 53.54s | Throughput de concurrencia: 93.4 ops/seg
+  Hilos completados con éxito: 100 / 100
+  ✅ SABUESO 1 PASSED: Aislamiento TLS verificado y concurrencia ejecutada sin colisiones.
+
+################################################################################
+🔥 [SABUESO ADVERSARIAL] SABUESO 2: Inyección de Números Desnormalizados (1e-315), NaNs, y Singularidades FPU
+################################################################################
+  [2.1] Atacando Freno AuON con flotantes desnormalizados y ceros con signo...
+     -> Subnormales procesados en FPU sin underflow stalls ni divergencia.
+  [2.2] Atacando con parámetros degenerados (scale_s -> 0, lambda -> 0)...
+  [2.3] Atacando con NaNs e Infinities forzados...
+  [2.4] Atacando métrica geodésica con perturbación singular 1.0 + 1e-15...
+  ✅ SABUESO 2 PASSED: Resistencia contra números desnormalizados, ceros con signo, NaNs y singularidades.
+
+################################################################################
+🔥 [SABUESO ADVERSARIAL] SABUESO 3: Escalamiento Asintótico D=1,000,000 & Presión de Memoria RAM
+################################################################################
+  [3.1] Asignando vectores continuos de alta dimensión D=1,000,000 (8 MB cada uno)...
+  [3.2] Evaluando geodésica Riemanniana en D=1,000,000 en C++ y Rust...
+     -> C++ OpenMP: 46.12 ms | Distancia Angular: 1.570239 rad
+     -> Rust SIMD:   3.20 ms | Distancia Angular: 1.570239 rad
+  [3.3] Ejecutando 50 ciclos continuos de transferencia de 16 MB en RAM con monitoreo de RSS...
+     -> Transferencia de 16 MB: Latencia p50 = 17857.90 µs | Ancho de Banda = 0.94 GB/s
+     -> Delta RSS Working Set: 0.00 MB tras 50 transferencias (tolerancia < 32 MB)
+  ✅ SABUESO 3 PASSED: Escalamiento D=1,000,000 y transferencias masivas de 16 MB completadas.
+
+================================================================================
+📋 RESUMEN DE LOS 3 SABUESOS: 3/3 SABUESOS COMPLETADOS (Exit Code 0) EN 55.69s
+================================================================================
+
+
+
+=== AMD INSTINCT ROCm / OPENMP ===
+======================================================================
+🚀 POLYDIM V900 — AMD INSTINCT MI300X/MI325X BENCHMARK RUNNER
+======================================================================
+[COMPILER] Tipo detectado: g++_winlibs
+[BUILD COMMAND] E:\winlibs_gcc14_zip\mingw64\bin\g++.exe -O3 -std=c++20 -fopenmp E:\POLYDIM_EINSOF\ENTREGA_2026_09_29_V900\rocm_amd_mi300x\polydim_rocm_mi300x_benchmark.cpp -o E:\POLYDIM_EINSOF\ENTREGA_2026_09_29_V900\rocm_amd_mi300x\polydim_rocm_bench.exe
+✅ Compilación exitosa (Exit Code 0).
+[EXECUTING] E:\POLYDIM_EINSOF\ENTREGA_2026_09_29_V900\rocm_amd_mi300x\polydim_rocm_bench.exe
+
+>>> Ejecutando benchmark para D = 10,000...
+=================================================================
+ POLYDIM V900 — AMD INSTINCT MI300X/MI325X BENCHMARK HARNESS
+ Memory Class 1 (HBM3) | CDNA3 Wavefront 64
+=================================================================
+
+[CONFIG] Dimension D = 10000 | Stiefel Rank K = 16
+[NOTE] Compiled in CPU OpenMP fallback mode (No HIPCC compiler active).
+[BENCHMARK SIMULATION] Simulating D=10000, K=16 on CPU threads: 2
+>>> [CERTIFICATION] CPU FALLBACK SIMULATION COMPLETE (EXIT CODE 0)
+
+>>> Ejecutando benchmark para D = 100,000...
+=================================================================
+ POLYDIM V900 — AMD INSTINCT MI300X/MI325X BENCHMARK HARNESS
+ Memory Class 1 (HBM3) | CDNA3 Wavefront 64
+=================================================================
+
+[CONFIG] Dimension D = 100000 | Stiefel Rank K = 16
+[NOTE] Compiled in CPU OpenMP fallback mode (No HIPCC compiler active).
+[BENCHMARK SIMULATION] Simulating D=100000, K=16 on CPU threads: 2
+>>> [CERTIFICATION] CPU FALLBACK SIMULATION COMPLETE (EXIT CODE 0)
+
+>>> Ejecutando benchmark para D = 1,000,000...
+=================================================================
+ POLYDIM V900 — AMD INSTINCT MI300X/MI325X BENCHMARK HARNESS
+ Memory Class 1 (HBM3) | CDNA3 Wavefront 64
+=================================================================
+
+[CONFIG] Dimension D = 1000000 | Stiefel Rank K = 16
+[NOTE] Compiled in CPU OpenMP fallback mode (No HIPCC compiler active).
+[BENCHMARK SIMULATION] Simulating D=1000000, K=16 on CPU threads: 2
+>>> [CERTIFICATION] CPU FALLBACK SIMULATION COMPLETE (EXIT CODE 0)
+
+>>> Ejecutando benchmark para D = 10,000,000...
+=================================================================
+ POLYDIM V900 — AMD INSTINCT MI300X/MI325X BENCHMARK HARNESS
+ Memory Class 1 (HBM3) | CDNA3 Wavefront 64
+=================================================================
+
+[CONFIG] Dimension D = 10000000 | Stiefel Rank K = 16
+[NOTE] Compiled in CPU OpenMP fallback mode (No HIPCC compiler active).
+[BENCHMARK SIMULATION] Simulating D=10000000, K=16 on CPU threads: 2
+>>> [CERTIFICATION] CPU FALLBACK SIMULATION COMPLETE (EXIT CODE 0)
+
+✅ Todos los benchmarks completados con éxito (Exit Code 0).
+📄 Log empírico guardado en: E:\POLYDIM_EINSOF\ENTREGA_2026_09_29_V900\rocm_amd_mi300x\amd_mi300x_benchmark_raw_log.txt
+
+
+

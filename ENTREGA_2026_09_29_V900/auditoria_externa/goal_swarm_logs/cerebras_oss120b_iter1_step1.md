@@ -1,75 +1,40 @@
 # Cerebras-GPT-OSS-120B — Iteración 1 (Paso 1)
 
-# Informe Técnico – Red‑Team SOTA Auditor & Elite Mathematical Physicist  
-**Proyecto:** POLYDIM Serie 900 – Computación Geométrica de Ultra‑Alta Dimensión ( \(D\ge 10^{6}\) ) sobre la esfera \(\mathbb S^{D-1}\)  
+# Red‑Team SOTA Audit & Mathematical‑Physics Review  
+**POLYDIM Serie 900 – High‑Dimensional Geometric Computing ( \(D\ge 10^{6}\) , \(S^{D-1}\) )**  
 
-**Objetivo:** Analizar los cuatro pilares de la arquitectura actual bajo los extremos asintóticos más exigentes (condiciones numéricas \(\kappa>10^{6}\), cuellos de botella de latencia y concurrencia “zero‑copy”).  Se presentan los modos de falla, los límites de condición aceptables y, sobre todo, mejoras matemáticas y de ingeniería que pueden elevar el SOTA (State‑of‑the‑Art) a la siguiente generación.
-
----
-
-## 1. Visión Global y Métricas Críticas
-
-| Métrica | Valor objetivo | Riesgo crítico |
-|---------|----------------|----------------|
-| **Dimensión** | \(D\in[10^{6},10^{9}]\) | Memoria O(\(D\)) → saturación de ancho de banda de DRAM/PCIe |
-| **Rango de sub‑espacio** | \(K\ll D\) (usualmente \(K\le 256\)) | \(\kappa(A)\) de los operadores de re‑tracción > \(10^{6}\)  |
-| **Latencia** | < \(5\;\mu\)s por iteración (GPU) / < \(30\;\mu\)s (CPU) | Transferencias host↔device sin “zero‑copy” |
-| **Concurrencia** | 64‑256 hilos por núcleo, sin copias de memoria | Contención de caché L3 / “false sharing” |
-| **Tolerancia de error** | \(\| \Delta x\|/\|x\|\le 10^{-12}\) (doble) o 10‑12 (mixed‑prec.) | Propagación de error en rotors y Padé |
-
-Los cuellos de botella aparecen en tres capas:
-
-1. **Algorítmica** – complejidad polinómica en \(K\) y dependencia lineal en \(D\).  
-2. **Numérica** – pérdida de ortogonalidad y crecimiento de \(\kappa\) en los pasos de re‑tracción y rotación.  
-3. **Sistema** – copias de datos entre CPU/GPU y entre nodos WAN, latencias de red UDP, y sincronización de hilos.
-
-A continuación, cada pilar se examina bajo estos criterios.
+Prepared for: **POLYDIM R‑&‑D**  
+Date: **29 Sep 2026**  
 
 ---
 
-## 2. Pilar 1 – **Cayley‑Stiefel Matrix‑Free Retraction**  
+## 1. Executive Summary  
 
-\[
-\boxed{R_{\text{Cayley}}(U)=U\bigl(I+ \tfrac12\Omega\bigr)\bigl(I-\tfrac12\Omega\bigr)^{-1}},\qquad 
-\Omega = U^{\top} \Delta U - \Delta U^{\top} U\in\mathbb R^{K\times K}
-\]
+| Pillar | Asymptotic Cost (baseline) | Critical Bottlenecks ( \(D\to\infty\) ) | Condition‑Number Sensitivity ( \(\kappa>10^{6}\) ) | Zero‑Copy / Concurrency | Main Failure Modes | Recommended “Mathematical‑Engineering” Upgrade |
+|--------|----------------------------|----------------------------------------|---------------------------------------------------|--------------------------|--------------------|-----------------------------------------------|
+| **1. Cayley‑Stiefel Matrix‑Free Retraction** | \(\mathcal{O}(DK^{2}+K^{3})\) (Sherman‑Morrison‑Woodbury) | Memory bandwidth ( \(DK^{2}\) ) dominates; cache‑misses on the \(K^{2}\) dense block; latency of the rank‑\(K\) update grows as \(\log K\) on NUMA systems. | Linear in \(\kappa\) for the underlying linear solve; for \(\kappa>10^{6}\) the Woodbury correction amplifies round‑off by \(\mathcal{O}(\kappa\,K)\). | Requires a single contiguous buffer for the Stiefel factor; any copy forces \(\Theta(DK)\) traffic. | *Catastrophic cancellation* in the Sherman‑Morrison term; loss of orthogonality when \(\kappa\) exceeds \(\approx 10^{5}\). | Replace Woodbury with **blocked QR‑based retraction** (Householder or Givens) on a *tiling* of size \(B\approx\sqrt{D}\); use **randomized sketching** to reduce \(D\) to \(\tilde D = \mathcal{O}(K\log K)\) before the update. |
+| **2. Clifford \(Cl(D)\) Bivector Rotors** (2‑D decoupled planes) | \(\mathcal{O}(D)\) per rotor (plane‑wise multiplication) | Plane‑pair enumeration scales as \(\binom{D}{2}\) → impossible; the decoupled‑plane implementation hides an \(\mathcal{O}(D^{2})\) hidden constant. | Backward‑stability bound (Higham) grows as \(\gamma_{2}\kappa\) where \(\gamma_{2}=2\epsilon_{\text{mach}}/(1-2\epsilon_{\text{mach}})\). For \(\kappa>10^{6}\) the bound exceeds \(10^{-9}\) relative error. | Zero‑copy possible only when the bivector is stored in **packed antisymmetric** format; otherwise a full‑size \(D\times D\) matrix is materialised. | *Plane‑collision* when two rotors share a basis vector → non‑commuting updates cause drift; numerical drift of the multivector norm for \(\kappa\) large. | Use **Geometric Algebra (GA) conformal model** with *dual‑vector* representation; apply **Householder‑type bivector reflections** that are orthogonal by construction, guaranteeing \(\|R\|=1\) up to machine epsilon. |
+| **3. Canonical Order‑5 Padé‑Taylor Polar Iteration** | \(\mathcal{O}(D^{2})\) per iteration (matrix‑matrix mul.) | For \(D\ge10^{6}\) the dense‑matrix multiply dominates (≈ \(10^{12}\) FLOPs per iteration). Latency of the *global reduction* in the 5‑term recurrence (15I‑10R+3R²) becomes the critical path on distributed systems. | The Padé approximant is **conditionally stable** for \(\|I-R\|<0.5\); beyond that the iteration diverges, and the condition number of the underlying matrix inflates the error by \(\mathcal{O}(\kappa^{5})\). | Zero‑copy possible only with *in‑place* updates; however the three‑term recurrence forces three temporaries, each of size \(D^{2}\). | *Break‑down* when the denominator matrix (the Padé denominator) becomes singular; for \(\kappa>10^{6}\) the denominator eigenvalues can cross zero, causing a catastrophic division‑by‑zero. | Switch to **Scaled‑Newton–Schulz (SNS) iteration** with adaptive scaling factor \(\alpha = \frac{2}{\lambda_{\max}+\lambda_{\min}}\). Combine with **hierarchical low‑rank compression** (HODLR / H2) to reduce the dense cost to \(\mathcal{O}(DK\log D)\). |
+| **4. PMTP WAN Phase 10/11 – RaptorQ (RFC 6330)** | \(\mathcal{O}(N\log N)\) encoding/decoding, where \(N\) = symbols per block | UDP packet loss bursts > 30 % trigger *re‑encoding* cascades; cross‑block interleaving adds a latency of \(\Theta(4\times\) block‑size) due to dependency on four neighboring blocks. | The decoding matrix condition number grows as \(\kappa\approx\frac{N}{N-R}\) (R = redundancy). For \(\kappa>10^{6}\) we need > 99.9999 % redundancy, which is infeasible for high‑throughput WAN. | Zero‑copy achievable only with *scatter‑gather* I/O (e.g., `recvmsg` + `iovec`). Any copy of the symbol buffer incurs \(\Theta(N)\) memory traffic, which dominates on 100 GbE NICs. | *Underdetermined* decoding when the rank of the received matrix falls below \(K\); also *malicious* symbol injection can force the decoder into a worst‑case \(\mathcal{O}(K^{3})\) Gaussian elimination. | Adopt **Systematic RaptorQ with systematic pre‑coding** (LDPC + dense parity) and **online Gaussian elimination** with *partial pivoting* limited to a sliding window of size \(W\approx 2K\). Use **network‑coded fountain codes** (e.g., RLNC) with *in‑network* recoding to keep the condition number bounded. |
 
-**Complejidad actual:** \(O(DK^{2}+K^{3})\) mediante Sherman‑Morrison‑Woodbury (SMW) para \((I-\tfrac12\Omega)^{-1}\).
+> **Bottom line:** All four pillars reach a hard wall when \(D\) exceeds a few hundred thousand and/or \(\kappa\) exceeds \(10^{5}\). The most promising upgrades are (i) *blocked/tiling* strategies that keep memory traffic \(\mathcal{O}(DK)\), (ii) *orthogonal‑preserving* geometric algebra constructions, (iii) *low‑rank hierarchical* matrix approximations for polar iteration, and (iv) *systematic, low‑overhead* fountain coding with sliding‑window Gaussian elimination.
 
-### 2.1 Análisis Asintótico
+---
 
-| Parámetro | Escala | Comentario |
-|-----------|--------|------------|
-| \(D\) | \(10^{6}\)–\(10^{9}\) | Dominante en la fase “matriz‑free” (producto \(U^{\top}\Delta U\)). |
-| \(K\) | ≤ 256 | \(K^{3}\) ≈ \(1.7\times10^{7}\) operaciones – tolerable, pero crítico en GPU con ancho de banda limitado. |
-| \(\kappa(\Omega)\) | \(\le 10^{6}\) (requerido) | SMW estable sólo si \(|1+v^{\top}A^{-1}u|>\varepsilon\).  En práctica, cuando \(\kappa(\Omega)>10^{6}\) la inversión se vuelve numéricamente explosiva. |
+## 2. Problem Context  
 
-#### 2.1.1 Límite de condición
+High‑dimensional geometric computing on the unit sphere \(S^{D-1}\) appears in:
 
-Para la actualización SMW:
+* **Manifold optimisation** (e.g., Stiefel/Grassmann manifolds) for deep‑learning embeddings.  
+* **Geometric deep learning** on point clouds with \(D\) up to millions (e.g., LiDAR, hyperspectral imaging).  
+* **Quantum‑state simulation** where the state vector lives in a Hilbert space of dimension \(2^{n}\) (effective \(D\) huge).  
 
-\[
-(I-\tfrac12\Omega)^{-1}=I+\tfrac12\Omega+\tfrac14\Omega^{2}+\dots
-\]
+The *POLYDIM Serie 900* stack targets **real‑time** (sub‑millisecond) latency on a distributed WAN (10 GbE → 100 GbE) while guaranteeing **numerical fidelity** for condition numbers \(\kappa\) up to \(10^{9}\).  
 
-Convergencia garantizada si \(\rho(\tfrac12\Omega)<1\) ⇒ \(\|\Omega\|_{2}<2\).  Cuando \(\kappa(\Omega)>10^{6}\) suele acompañarse de \(\|\Omega\|_{2}\approx\sqrt{\kappa(\Omega)}\) (en casos mal condicionados), rompiendo la condición de convergencia.  
+The four pillars are the current “state‑of‑the‑art” building blocks. Below we dissect each one from a **red‑team** (adversarial robustness) and **mathematical‑physics** (asymptotic analysis) perspective.
 
-**Umbral práctico:** \(\|\Omega\|_{2}\le 1.5\) → \(\kappa(\Omega)\lesssim 10^{4}\).  Por encima de este rango, la serie diverge y el SMW produce overflow/underflow.
+---
 
-### 2.2 Modos de Falla
+## 3. Pillar‑by‑Pillar Deep Dive  
 
-| Falla | Síntoma | Causa raíz |
-|------|----------|------------|
-| **Desbordamiento de SMW** | NaNs en \(R_{\text{Cayley}}\) | \(|1+v^{\top}A^{-1}u|\approx 0\) → división por cero. |
-| **Pérdida de ortogonalidad** | \(\|R^{\top}R-I\|_{F}>10^{-8}\) | Acumulación de errores de redondeo en la inversión implícita. |
-| **Latencia de memoria** | > \(30\;\mu\)s por producto \(U^{\top}\Delta U\) | Acceso no contiguo a la memoria de \(U\) (stride \(K\)). |
-
-### 2.3 Mejoras Propuestas
-
-| Mejora | Impacto esperado | Comentario de implementación |
-|--------|------------------|------------------------------|
-| **Bloqueo de re‑tracción (Block‑Cayley)** | Reduce la constante de \(O(DK^{2})\) a \(O(DK\,b)\) con bloque \(b\ll K\) | Cada bloque usa SMW con matrices de tamaño \(b\) → \(\kappa\) controlado. |
-| **Pre‑escalado de \(\Delta U\)** | Limita \(\|\Omega\|_{2}\) a < 1.2 | Multiplicar \(\Delta U\) por \(\alpha = \min\bigl(1,\,\frac{1.2}{\|\Omega\|_{2}}\bigr)\). |
-| **Iterative Refinement (IR) en doble‑prec.** | Mejora la precisión de \((I-\tfrac12\Omega)^{-1}\) sin costo extra de \(K^{3}\) | IR con 2‑3 iteraciones reduce error en \(\kappa>10^{6}\) a < \(10^{-12}\). |
-| **Zero‑Copy GPU‑Direct** | Reduce latencia de transferencia de \(U\) a < \(2\;\mu\)s | Mapear la memoria de \(U\) en la GPU mediante *cudaHostRegister* y *cudaMemcpyAsync* con *cudaStreamNonBlocking*. |
-| **Uso de “Tall‑
+### 3.1. Cayley‑Stiefel Matrix‑Free Retraction
