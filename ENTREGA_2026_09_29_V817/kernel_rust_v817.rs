@@ -911,3 +911,201 @@ pub extern "C" fn polydim_rust_qsbr_snapshot_copy_v817(
         -99
     })
 }
+
+// ============================================================================
+// 10. RETRACCIÓN CAYLEY-STIEFEL MATRIX-FREE VÍA SHERMAN-MORRISON-WOODBURY (SMW)
+// ============================================================================
+
+fn solve_linear_system_2k_rust(n_sys: usize, n_rhs: usize, a: &[f64], b: &[f64], x_sol: &mut [f64]) -> bool {
+    let cols = n_sys + n_rhs;
+    let mut aug = vec![0.0f64; n_sys * cols];
+    for i in 0..n_sys {
+        for j in 0..n_sys {
+            aug[i * cols + j] = a[i * n_sys + j];
+        }
+        for j in 0..n_rhs {
+            aug[i * cols + n_sys + j] = b[i * n_rhs + j];
+        }
+    }
+
+    for i in 0..n_sys {
+        let mut pivot = i;
+        let mut max_val = aug[i * cols + i].abs();
+        for r in (i + 1)..n_sys {
+            let val = aug[r * cols + i].abs();
+            if val > max_val {
+                max_val = val;
+                pivot = r;
+            }
+        }
+        if max_val < 1e-15 {
+            return false;
+        }
+        if pivot != i {
+            for c in i..cols {
+                aug.swap(i * cols + c, pivot * cols + c);
+            }
+        }
+        let pivot_val = aug[i * cols + i];
+        for c in i..cols {
+            aug[i * cols + c] /= pivot_val;
+        }
+        for r in 0..n_sys {
+            if r != i {
+                let factor = aug[r * cols + i];
+                for c in i..cols {
+                    let sub = factor * aug[i * cols + c];
+                    aug[r * cols + c] -= sub;
+                }
+            }
+        }
+    }
+
+    for i in 0..n_sys {
+        for j in 0..n_rhs {
+            x_sol[i * n_rhs + j] = aug[i * cols + n_sys + j];
+        }
+    }
+    true
+}
+
+#[no_mangle]
+pub extern "C" fn polydim_rust_stiefel_cayley_smw_retraction_v817(
+    dim_d: c_uint,
+    rank_k: c_uint,
+    tau: c_double,
+    x_ptr: *const c_double,
+    g_ptr: *const c_double,
+    y_out: *mut c_double,
+    ortho_error_out: *mut c_double,
+    err: *mut V817Error,
+) -> c_int {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if x_ptr.is_null() || g_ptr.is_null() || y_out.is_null() || ortho_error_out.is_null() {
+            set_last_error("Null pointer in rust_stiefel_cayley_smw_retraction");
+            if !err.is_null() { unsafe { (*err).write_error(1, "Null pointer provided"); } }
+            return -1;
+        }
+
+        if dim_d == 0 || rank_k == 0 {
+            set_last_error("dim_d and rank_k must be > 0");
+            if !err.is_null() { unsafe { (*err).write_error(2, "dim_d and rank_k must be > 0"); } }
+            return -2;
+        }
+
+        let d = dim_d as usize;
+        let k = rank_k as usize;
+        let n_sys = 2 * k;
+
+        let x_slice = unsafe { std::slice::from_raw_parts(x_ptr, d * k) };
+        let g_slice = unsafe { std::slice::from_raw_parts(g_ptr, d * k) };
+        let y_slice = unsafe { std::slice::from_raw_parts_mut(y_out, d * k) };
+
+        // 1. Calcular bloques KxK: A = X^T G, B = X^T X, C = G^T G
+        let mut mat_a = vec![0.0f64; k * k];
+        let mut mat_b = vec![0.0f64; k * k];
+        let mut mat_c = vec![0.0f64; k * k];
+
+        for row in 0..d {
+            let xr = &x_slice[row * k..(row + 1) * k];
+            let gr = &g_slice[row * k..(row + 1) * k];
+            for i in 0..k {
+                let xi = xr[i];
+                let gi = gr[i];
+                for j in 0..k {
+                    mat_a[i * k + j] += xi * gr[j];
+                    mat_b[i * k + j] += xi * xr[j];
+                    mat_c[i * k + j] += gi * gr[j];
+                }
+            }
+        }
+
+        // 2. Construir sistema 2K x 2K: M = I_2K - (tau / 2) * [A, -B; C, -A^T]
+        let mut mat_m = vec![0.0f64; n_sys * n_sys];
+        let half_tau = 0.5 * tau;
+
+        for i in 0..k {
+            for j in 0..k {
+                let eye = if i == j { 1.0f64 } else { 0.0f64 };
+                // Top-left: I - (tau/2)*A
+                mat_m[i * n_sys + j] = eye - half_tau * mat_a[i * k + j];
+                // Top-right: (tau/2)*B
+                mat_m[i * n_sys + (k + j)] = half_tau * mat_b[i * k + j];
+                // Bottom-left: -(tau/2)*C
+                mat_m[(k + i) * n_sys + j] = -half_tau * mat_c[i * k + j];
+                // Bottom-right: I + (tau/2)*A^T
+                mat_m[(k + i) * n_sys + (k + j)] = eye + half_tau * mat_a[j * k + i];
+            }
+        }
+
+        // 3. Construir RHS = [B; A^T] de tamaño 2K x K
+        let mut rhs = vec![0.0f64; n_sys * k];
+        for i in 0..k {
+            for j in 0..k {
+                rhs[i * k + j] = mat_b[i * k + j];
+                rhs[(k + i) * k + j] = mat_a[j * k + i]; // A^T
+            }
+        }
+
+        // 4. Resolver sistema lineal M * Z = RHS
+        let mut mat_z = vec![0.0f64; n_sys * k];
+        if !solve_linear_system_2k_rust(n_sys, k, &mat_m, &rhs, &mut mat_z) {
+            set_last_error("Matrix M is singular in Stiefel SMW retraction");
+            if !err.is_null() { unsafe { (*err).write_error(3, "Matrix M singular"); } }
+            return -3;
+        }
+
+        // 5. Reconstruir Y = X + tau * (G * Z1 - X * Z2) de tamaño D x K
+        for row in 0..d {
+            let xr = &x_slice[row * k..(row + 1) * k];
+            let gr = &g_slice[row * k..(row + 1) * k];
+            let yr = &mut y_slice[row * k..(row + 1) * k];
+
+            for col in 0..k {
+                let mut sum_g = 0.0f64;
+                let mut sum_x = 0.0f64;
+                for j in 0..k {
+                    sum_g += gr[j] * mat_z[j * k + col];
+                    sum_x += xr[j] * mat_z[(k + j) * k + col];
+                }
+                yr[col] = xr[col] + tau * (sum_g - sum_x);
+            }
+        }
+
+        // 6. Computar error de ortonormalidad de salida: ||Y^T Y - I_K||_F / sqrt(K)
+        let mut yty = vec![0.0f64; k * k];
+        for row in 0..d {
+            let yr = &y_slice[row * k..(row + 1) * k];
+            for i in 0..k {
+                let yi = yr[i];
+                for j in 0..k {
+                    yty[i * k + j] += yi * yr[j];
+                }
+            }
+        }
+
+        let mut frob_sq = 0.0f64;
+        for i in 0..k {
+            for j in 0..k {
+                let eye = if i == j { 1.0f64 } else { 0.0f64 };
+                let diff = yty[i * k + j] - eye;
+                frob_sq += diff * diff;
+            }
+        }
+        let ortho_err = (frob_sq / (k as f64)).sqrt();
+
+        unsafe {
+            *ortho_error_out = ortho_err;
+            if !err.is_null() { (*err).write_success(); }
+        }
+
+        0
+    }));
+
+    result.unwrap_or_else(|_| {
+        set_last_error("Panic caught in stiefel_cayley_smw_retraction");
+        if !err.is_null() { unsafe { (*err).write_error(99, "Panic unwind caught"); } }
+        -99
+    })
+}
+

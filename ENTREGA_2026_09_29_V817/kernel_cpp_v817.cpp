@@ -637,3 +637,216 @@ POLYDIM_EXPORT int polydim_cpp_qsbr_snapshot_copy_v817(
     set_error_success(err);
     return 0;
 }
+
+// ============================================================================
+// 9. RETRACCIÓN CAYLEY-STIEFEL MATRIX-FREE VÍA SHERMAN-MORRISON-WOODBURY (SMW)
+// ============================================================================
+
+namespace {
+
+bool solve_linear_system_2k_cpp(int n_sys, int n_rhs, const double* A, const double* B, double* X_sol) {
+    int cols = n_sys + n_rhs;
+    std::vector<double> aug(n_sys * cols);
+    for (int i = 0; i < n_sys; ++i) {
+        for (int j = 0; j < n_sys; ++j) {
+            aug[i * cols + j] = A[i * n_sys + j];
+        }
+        for (int j = 0; j < n_rhs; ++j) {
+            aug[i * cols + n_sys + j] = B[i * n_rhs + j];
+        }
+    }
+
+    for (int i = 0; i < n_sys; ++i) {
+        int pivot = i;
+        double max_val = std::abs(aug[i * cols + i]);
+        for (int r = i + 1; r < n_sys; ++r) {
+            double val = std::abs(aug[r * cols + i]);
+            if (val > max_val) {
+                max_val = val;
+                pivot = r;
+            }
+        }
+        if (max_val < 1e-15) {
+            return false;
+        }
+        if (pivot != i) {
+            for (int c = i; c < cols; ++c) {
+                std::swap(aug[i * cols + c], aug[pivot * cols + c]);
+            }
+        }
+        double pivot_val = aug[i * cols + i];
+        for (int c = i; c < cols; ++c) {
+            aug[i * cols + c] /= pivot_val;
+        }
+        for (int r = 0; r < n_sys; ++r) {
+            if (r != i) {
+                double factor = aug[r * cols + i];
+                for (int c = i; c < cols; ++c) {
+                    aug[r * cols + c] -= factor * aug[i * cols + c];
+                }
+            }
+        }
+    }
+
+    for (int i = 0; i < n_sys; ++i) {
+        for (int j = 0; j < n_rhs; ++j) {
+            X_sol[i * n_rhs + j] = aug[i * cols + n_sys + j];
+        }
+    }
+    return true;
+}
+
+} // namespace
+
+POLYDIM_EXPORT int polydim_cpp_stiefel_cayley_smw_retraction_v817(
+    uint32_t dim_d,
+    uint32_t rank_k,
+    double tau,
+    const double* x_ptr,
+    const double* g_ptr,
+    double* y_out,
+    double* ortho_error_out,
+    PolydimErrorV817* err
+) {
+    if (!x_ptr || !g_ptr || !y_out || !ortho_error_out) {
+        set_error_msg(err, 1, "Null pointer in cpp_stiefel_cayley_smw_retraction");
+        return -1;
+    }
+
+    if (dim_d == 0 || rank_k == 0) {
+        set_error_msg(err, 2, "dim_d and rank_k must be > 0");
+        return -2;
+    }
+
+    int64_t d = static_cast<int64_t>(dim_d);
+    int64_t k = static_cast<int64_t>(rank_k);
+    int64_t n_sys = 2 * k;
+
+    // 1. Calcular bloques KxK: A = X^T G, B = X^T X, C = G^T G
+    std::vector<double> mat_a(k * k, 0.0);
+    std::vector<double> mat_b(k * k, 0.0);
+    std::vector<double> mat_c(k * k, 0.0);
+
+    #pragma omp parallel
+    {
+        std::vector<double> local_a(k * k, 0.0);
+        std::vector<double> local_b(k * k, 0.0);
+        std::vector<double> local_c(k * k, 0.0);
+
+        #pragma omp for schedule(static)
+        for (int64_t row = 0; row < d; ++row) {
+            const double* xr = x_ptr + row * k;
+            const double* gr = g_ptr + row * k;
+            for (int64_t i = 0; i < k; ++i) {
+                double xi = xr[i];
+                double gi = gr[i];
+                for (int64_t j = 0; j < k; ++j) {
+                    local_a[i * k + j] += xi * gr[j];
+                    local_b[i * k + j] += xi * xr[j];
+                    local_c[i * k + j] += gi * gr[j];
+                }
+            }
+        }
+
+        #pragma omp critical
+        {
+            for (int64_t idx = 0; idx < k * k; ++idx) {
+                mat_a[idx] += local_a[idx];
+                mat_b[idx] += local_b[idx];
+                mat_c[idx] += local_c[idx];
+            }
+        }
+    }
+
+    // 2. Construir sistema 2K x 2K: M = I_2K - (tau / 2) * [A, -B; C, -A^T]
+    //    M = [ I_K - (tau/2)*A,       (tau/2)*B     ]
+    //        [ -(tau/2)*C,       I_K + (tau/2)*A^T  ]
+    std::vector<double> mat_m(n_sys * n_sys, 0.0);
+    double half_tau = 0.5 * tau;
+
+    for (int64_t i = 0; i < k; ++i) {
+        for (int64_t j = 0; j < k; ++j) {
+            double eye = (i == j ? 1.0 : 0.0);
+            // Top-left: I - (tau/2)*A
+            mat_m[i * n_sys + j] = eye - half_tau * mat_a[i * k + j];
+            // Top-right: (tau/2)*B
+            mat_m[i * n_sys + (k + j)] = half_tau * mat_b[i * k + j];
+            // Bottom-left: -(tau/2)*C
+            mat_m[(k + i) * n_sys + j] = -half_tau * mat_c[i * k + j];
+            // Bottom-right: I + (tau/2)*A^T
+            mat_m[(k + i) * n_sys + (k + j)] = eye + half_tau * mat_a[j * k + i];
+        }
+    }
+
+    // 3. Construir RHS = [B; A^T] de tamaño 2K x K
+    std::vector<double> rhs(n_sys * k, 0.0);
+    for (int64_t i = 0; i < k; ++i) {
+        for (int64_t j = 0; j < k; ++j) {
+            rhs[i * k + j] = mat_b[i * k + j];
+            rhs[(k + i) * k + j] = mat_a[j * k + i]; // A^T
+        }
+    }
+
+    // 4. Resolver sistema lineal M * Z = RHS
+    std::vector<double> mat_z(n_sys * k, 0.0);
+    if (!solve_linear_system_2k_cpp(static_cast<int>(n_sys), static_cast<int>(k), mat_m.data(), rhs.data(), mat_z.data())) {
+        set_error_msg(err, 3, "Matrix M is singular or ill-conditioned in SMW retraction");
+        return -3;
+    }
+
+    // 5. Reconstruir Y = X + tau * (G * Z1 - X * Z2) de tamaño D x K
+    #pragma omp parallel for schedule(static)
+    for (int64_t row = 0; row < d; ++row) {
+        const double* xr = x_ptr + row * k;
+        const double* gr = g_ptr + row * k;
+        double* yr = y_out + row * k;
+
+        for (int64_t col = 0; col < k; ++col) {
+            double sum_g = 0.0;
+            double sum_x = 0.0;
+            for (int64_t j = 0; j < k; ++j) {
+                sum_g += gr[j] * mat_z[j * k + col];
+                sum_x += xr[j] * mat_z[(k + j) * k + col];
+            }
+            yr[col] = xr[col] + tau * (sum_g - sum_x);
+        }
+    }
+
+    // 6. Computar error de ortonormalidad de salida: ||Y^T Y - I_K||_F / sqrt(K)
+    std::vector<double> yty(k * k, 0.0);
+    #pragma omp parallel
+    {
+        std::vector<double> local_yty(k * k, 0.0);
+        #pragma omp for schedule(static)
+        for (int64_t row = 0; row < d; ++row) {
+            const double* yr = y_out + row * k;
+            for (int64_t i = 0; i < k; ++i) {
+                double yi = yr[i];
+                for (int64_t j = 0; j < k; ++j) {
+                    local_yty[i * k + j] += yi * yr[j];
+                }
+            }
+        }
+
+        #pragma omp critical
+        {
+            for (int64_t idx = 0; idx < k * k; ++idx) {
+                yty[idx] += local_yty[idx];
+            }
+        }
+    }
+
+    double frob_sq = 0.0;
+    for (int64_t i = 0; i < k; ++i) {
+        for (int64_t j = 0; j < k; ++j) {
+            double eye = (i == j ? 1.0 : 0.0);
+            double diff = yty[i * k + j] - eye;
+            frob_sq += diff * diff;
+        }
+    }
+    *ortho_error_out = std::sqrt(frob_sq / static_cast<double>(k));
+
+    set_error_success(err);
+    return 0;
+}
+

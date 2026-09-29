@@ -207,6 +207,19 @@ class PolydimRustKernelV817:
             ctypes.POINTER(PolydimErrorV817),
         ]
 
+        # Stiefel Cayley SMW Retraction
+        self.lib.polydim_rust_stiefel_cayley_smw_retraction_v817.restype = ctypes.c_int
+        self.lib.polydim_rust_stiefel_cayley_smw_retraction_v817.argtypes = [
+            ctypes.c_uint,
+            ctypes.c_uint,
+            ctypes.c_double,
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(PolydimErrorV817),
+        ]
+
     def get_last_error_string(self) -> str:
         """Copia inmediatamente el string de error en memoria privada antes de cualquier otra llamada FFI."""
         ptr = self.lib.polydim_rust_get_last_error_v817()
@@ -452,6 +465,42 @@ class PolydimRustKernelV817:
 
         return out_mat, rms_out.value
 
+    def stiefel_cayley_smw_retraction(self, x: np.ndarray, g: np.ndarray, tau: float = 0.1) -> Tuple[np.ndarray, float]:
+        """Retracción Cayley-Stiefel Matrix-Free vía Sherman-Morrison-Woodbury en Rust.
+        
+        x: Matriz D x K ortonormal en St(D, K)
+        g: Gradiente euclidiano D x K
+        tau: Tamaño de paso
+        Retorna: (Y de tamaño D x K, error de ortonormalidad)
+        """
+        x_arr = np.ascontiguousarray(x, dtype=np.float64)
+        g_arr = np.ascontiguousarray(g, dtype=np.float64)
+        d, k = x_arr.shape
+        if g_arr.shape != (d, k):
+            raise ValueError(f"Shape mismatch: {x_arr.shape} vs {g_arr.shape}")
+
+        y_out = np.zeros_like(x_arr)
+        ortho_err = ctypes.c_double(0.0)
+        err = PolydimErrorV817()
+
+        ret = self.lib.polydim_rust_stiefel_cayley_smw_retraction_v817(
+            ctypes.c_uint(d),
+            ctypes.c_uint(k),
+            ctypes.c_double(tau),
+            x_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            g_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            y_out.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            ctypes.byref(ortho_err),
+            ctypes.byref(err),
+        )
+
+        if ret != 0:
+            msg = err.message() or self.get_last_error_string()
+            raise RuntimeError(f"Rust stiefel_cayley_smw_retraction falló con código {ret}: {msg}")
+
+        return y_out, ortho_err.value
+
+
 
 # =============================================================================
 # BINDING NATIVO C++ (polydim_cpp_v817.dll)
@@ -562,6 +611,19 @@ class PolydimCppKernelV817:
         self.lib.polydim_cpp_auon_matrix_rms_normalize_v817.argtypes = [
             ctypes.c_uint32,
             ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(ctypes.c_double),
+            ctypes.POINTER(PolydimErrorV817),
+        ]
+
+        # Stiefel Cayley SMW Retraction
+        self.lib.polydim_cpp_stiefel_cayley_smw_retraction_v817.restype = ctypes.c_int
+        self.lib.polydim_cpp_stiefel_cayley_smw_retraction_v817.argtypes = [
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_double,
+            ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
             ctypes.POINTER(ctypes.c_double),
@@ -757,6 +819,41 @@ class PolydimCppKernelV817:
             raise RuntimeError(f"C++ auon_matrix_rms_normalize falló: {err.message()}")
 
         return out_mat, rms_out.value
+
+    def stiefel_cayley_smw_retraction(self, x: np.ndarray, g: np.ndarray, tau: float = 0.1) -> Tuple[np.ndarray, float]:
+        """Retracción Cayley-Stiefel Matrix-Free vía Sherman-Morrison-Woodbury en C++.
+        
+        x: Matriz D x K ortonormal en St(D, K)
+        g: Gradiente euclidiano D x K
+        tau: Tamaño de paso
+        Retorna: (Y de tamaño D x K, error de ortonormalidad)
+        """
+        x_arr = np.ascontiguousarray(x, dtype=np.float64)
+        g_arr = np.ascontiguousarray(g, dtype=np.float64)
+        d, k = x_arr.shape
+        if g_arr.shape != (d, k):
+            raise ValueError(f"Shape mismatch: {x_arr.shape} vs {g_arr.shape}")
+
+        y_out = np.zeros_like(x_arr)
+        ortho_err = ctypes.c_double(0.0)
+        err = PolydimErrorV817()
+
+        ret = self.lib.polydim_cpp_stiefel_cayley_smw_retraction_v817(
+            ctypes.c_uint32(d),
+            ctypes.c_uint32(k),
+            ctypes.c_double(tau),
+            x_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            g_arr.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            y_out.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+            ctypes.byref(ortho_err),
+            ctypes.byref(err),
+        )
+
+        if ret != 0:
+            raise RuntimeError(f"C++ stiefel_cayley_smw_retraction falló con código {ret}: {err.message()}")
+
+        return y_out, ortho_err.value
+
 
 
 # =============================================================================
