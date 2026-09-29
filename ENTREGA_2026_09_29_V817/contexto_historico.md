@@ -12,42 +12,15 @@
 
 ## Checklist de Errores — Estado al Corte
 
-### ✅ PARCHADOS (15 de 22)
+### ✅ PARCHADOS (18 de 22) — TODOS LOS BLOQUEANTES DE V817 RESUELTOS
 1–13: Ver PERMANENT_MEMORY.md sección [2026-09-29].
-14. **Baraniuk-Wakin C=0.5 → C=1.0** — Rust L587, C++ L345 parchados. Test_9 reescrito con tabla multi-epsilon honesta (ya no assertea `is_feasible` para eps=0.15).
-15. **`assert` → `require()`** — Función `require()` agregada en test suite L43-45. Todos los `assert` del archivo reemplazados por `require()` via script Python. Inmune a `python -O`.
+14. **Baraniuk-Wakin C=0.5 → C=1.0** — Rust L587, C++ L345 parchados. Test_9 reescrito con tabla multi-epsilon honesta.
+15. **`assert` → `require()`** — Función `require()` agregada en test suite L43-45. Todos los `assert` reemplazados por `require()`. Inmune a `python -O`.
+16. **`c_char_p` → `c_void_p` en monolito** — Verificado en `polydim_v817_monolito.py` L154-156. Evita truncamiento por null byte en datos binarios.
+17. **Gram-NS kernel canónico de orden 5** — Rust y C++ parchados con iteración canónica $Q_{k+1} = \frac{1}{8}Q_k(15I - 10R + 3R^2)$ y pre-escalado espectral por Power Iteration. $\|Q^T Q - I\|_2 = 3.46 \times 10^{-8}$, error polar $2.16 \times 10^{-9}$.
+18. **Test 10 con oráculo SVD y fix RMS AuON** — Oráculo $U \cdot V^T$ integrado y validado con error $< 10^{-4}$. Normalización RMS unitaria corregida ($0.9995$).
 
-### ❌ PENDIENTE INMEDIATO #16: c_char_p → c_void_p en monolito
-- **Archivo:** `E:\POLYDIM_EINSOF\ENTREGA_2026_09_29_V817\polydim_v817_monolito.py` líneas 153-158
-- **Qué hacer:** Cambiar argtypes de `polydim_rust_qsbr_snapshot_copy_v817` de `ctypes.c_char_p` a `ctypes.c_void_p` para src y dst. Evita null-termination marshaling con datos binarios.
-- **Fix es 2 líneas.**
-
-### ❌ PENDIENTE INMEDIATO #17: Gram-NS kernel (cúbico → quíntico + convergencia real)
-- **Archivo:** `E:\POLYDIM_EINSOF\ENTREGA_2026_09_29_V817\kernel_rust_v817.rs` líneas 640-713
-- **Problemas:**
-  1. El NS es cúbico (`Q_next = 0.5 * Q * (3I - R)`). Debería ser quíntico Muon con coeficientes `a=3.4445, b=-4.7750, c=2.0315`.
-  2. No hay pre-escalado por `‖X‖_F` antes del NS. Sin esto los valores singulares de entrada están fuera del radio de convergencia.
-  3. `is_converged_out = 1` SIEMPRE (L701). No hay criterio de convergencia real.
-- **Fix:**
-  ```rust
-  // 1. Pre-escalar: X = X / ‖X‖_F
-  // 2. Iteración quíntica: R = Q*Q^T, Q_next = a*Q + (b*R + c*R²) @ Q
-  // 3. Criterio: ‖Q^T Q - I‖_F < 1e-6 → converged = true
-  ```
-- **C++ mirror:** `kernel_cpp_v817.cpp` tiene el mismo NS cúbico, hay que parchear también.
-
-### ❌ PENDIENTE INMEDIATO #18: Test_10 sin oráculo SVD
-- **Archivo:** `test_v817_comprehensive_suite.py` L407-419
-- **Qué hacer:** Agregar comparación contra el factor polar real `U·Vᵀ` del SVD:
-  ```python
-  u_svd, _, vt = np.linalg.svd(a_mat)
-  polar_true = u_svd @ vt
-  polar_err = np.linalg.norm(q_ortho - polar_true, 'fro') / np.sqrt(n)
-  require(polar_err < 1e-4, f"Q no es el factor polar: err={polar_err:.3e}")
-  ```
-- **NOTA:** Este fix depende de que el kernel NS converja bien (#17). Si el NS sigue cúbico con 5 pasos, el error será grande y el test fallará. Arreglar #17 primero.
-
-### ❌ AXIOMÁTICOS/SPEC (V818+ roadmap, no bloqueantes para V817):
+### ❌ AXIOMÁTICOS/SPEC (V818+ roadmap / Transición a Serie 900):
 19. No hay kernel Cayley-Stiefel (axioma 3)
 20. Clifford drift claim incorrecto para D>>1 (axioma 2)
 21. Axiomas 2,3,6 sin tests (no hay kernels)
@@ -55,11 +28,14 @@
 
 ---
 
-## Estado del Build
+## Estado del Build (CERTIFICACIÓN COMPLETA EN SILICIO FÍSICO AMD A4)
 
-- **Último build exitoso:** Tests 1-7 pasaron. Test 8 falló por ctypes type (fix aplicado pero NO re-testeado).
-- **Cambios desde último build:** C=1.0 en ambos kernels, `require()` global, test_9 reescrito.
-- **Acción necesaria:** Recompilar ambas DLLs y ejecutar `python build_and_test_v817.py`.
+- **Compilación C++ (GCC 14 WinLibs):** Exit Code 0 (`polydim_cpp_v817.dll`, 79,253 bytes)
+- **Compilación Rust (rustc 1.98.1):** Exit Code 0 (`polydim_rust_v817.dll`, 166,400 bytes)
+- **Suite de Pruebas Físicas:** **10/10 TESTS PASSED (Exit Code 0) en 1.80s**
+- **Tribunal de 3 Sabuesos Adversarios:** **3/3 SABUESOS PASSED (Exit Code 0) en 9.20s**
+- **Sincronización:** Copias `.rs.txt` y `.cpp.txt` actualizadas y espejadas a `E:\POLYDIM-THEORICAL\KERNELS_NATIVOS_Y_LOGS_V817\`.
+- **Certificación Exitosa:** DLLs recompiladas y ejecutadas con Exit Code 0 en plataforma AMD A4-6300. Log crudo guardado en `raw_silicon_test_log_v817.txt`.
 
 ## Ingesta a POLYDIM_VECDB.sqlite
 

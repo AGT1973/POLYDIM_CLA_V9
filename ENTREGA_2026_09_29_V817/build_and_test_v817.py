@@ -8,14 +8,14 @@ os.chdir(base_dir)
 
 print(f"=== Compiling POLYDIM V817 Native Kernels in {base_dir} ===")
 
-# 1. Prepare C++ and Rust sources
+# 1. Prepare C++ and Rust sources (sync source to double semantic extension .txt)
 cpp_txt = os.path.join(base_dir, "kernel_cpp_v817.cpp.txt")
 cpp_src = os.path.join(base_dir, "kernel_cpp_v817.cpp")
-shutil.copy(cpp_txt, cpp_src)
+shutil.copy(cpp_src, cpp_txt)
 
 rust_txt = os.path.join(base_dir, "kernel_rust_v817.rs.txt")
 rust_src = os.path.join(base_dir, "kernel_rust_v817.rs")
-shutil.copy(rust_txt, rust_src)
+shutil.copy(rust_src, rust_txt)
 
 # 2. Compile C++ DLL with WinLibs GCC 14
 gpp_exe = r"E:\winlibs_gcc14_zip\mingw64\bin\g++.exe"

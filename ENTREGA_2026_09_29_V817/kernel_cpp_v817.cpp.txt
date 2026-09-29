@@ -152,7 +152,8 @@ POLYDIM_EXPORT int polydim_cpp_auon_matrix_rms_normalize_v817(
     }
     double rms = std::sqrt(cosh_sq_sum / static_cast<double>(n));
 
-    double scale = 1.0 / (rms + 1e-8);
+    double sqrt_n = std::sqrt(static_cast<double>(n));
+    double scale = sqrt_n / (rms + 1e-8);
     #pragma omp parallel for schedule(static)
     for (int64_t i = 0; i < n; ++i) {
         matrix_out[i] = (matrix_in[i] / f_norm) * scale;
@@ -342,7 +343,7 @@ POLYDIM_EXPORT int polydim_cpp_baraniuk_wakin_feasibility_v817(
     double rho = failure_rho;
     double n = static_cast<double>(dim_in);
 
-    double c_const = 0.5;
+    double c_const = 1.0; // Canonical universal constant Baraniuk-Wakin (2008)
     double term_geo = std::max(std::log(v / std::pow(tau, da)), 1.0);
     double term_eps = da * std::log(1.0 / eps);
     double term_prob = std::log(1.0 / rho);
@@ -385,27 +386,67 @@ POLYDIM_EXPORT int polydim_cpp_gram_ns_polar_restart_v817(
 
     memcpy(matrix_q_out, matrix_x, total * sizeof(double));
 
-    double frob_sq = 0.0;
-    for (int64_t i = 0; i < total; ++i) frob_sq += matrix_q_out[i] * matrix_q_out[i];
-    double norm = std::sqrt(frob_sq);
-    if (norm < 1e-12) norm = 1e-12;
-    for (int64_t i = 0; i < total; ++i) matrix_q_out[i] /= norm;
+    // Power iteration para estimar norma espectral (4 iteraciones)
+    std::vector<double> v_vec(n, 1.0 / std::sqrt(static_cast<double>(n)));
+    std::vector<double> w_vec(n, 0.0);
+    std::vector<double> v_next(n, 0.0);
 
-    int64_t max_steps = std::clamp(static_cast<int64_t>(max_total_steps), 1LL, 10LL);
+    for (int it = 0; it < 4; ++it) {
+        for (int64_t i = 0; i < n; ++i) {
+            double sum = 0.0;
+            #pragma omp simd reduction(+:sum)
+            for (int64_t j = 0; j < n; ++j) {
+                sum += matrix_q_out[i * n + j] * v_vec[j];
+            }
+            w_vec[i] = sum;
+        }
+        for (int64_t j = 0; j < n; ++j) {
+            double sum = 0.0;
+            #pragma omp simd reduction(+:sum)
+            for (int64_t i = 0; i < n; ++i) {
+                sum += matrix_q_out[i * n + j] * w_vec[i];
+            }
+            v_next[j] = sum;
+        }
+        double norm_v = 0.0;
+        for (int64_t j = 0; j < n; ++j) norm_v += v_next[j] * v_next[j];
+        norm_v = std::sqrt(norm_v);
+        if (norm_v > 1e-12) {
+            for (int64_t j = 0; j < n; ++j) v_vec[j] = v_next[j] / norm_v;
+        }
+    }
+
+    double w_sq = 0.0;
+    for (int64_t i = 0; i < n; ++i) {
+        double sum = 0.0;
+        #pragma omp simd reduction(+:sum)
+        for (int64_t j = 0; j < n; ++j) {
+            sum += matrix_q_out[i * n + j] * v_vec[j];
+        }
+        w_sq += sum * sum;
+    }
+    double s_est = std::sqrt(w_sq);
+    double s_bound = std::max(s_est * 1.05, 1e-12);
+
+    #pragma omp parallel for schedule(static)
+    for (int64_t i = 0; i < total; ++i) {
+        matrix_q_out[i] /= s_bound;
+    }
+
+    int64_t max_steps = std::clamp(static_cast<int64_t>(max_total_steps), 1LL, 20LL);
     std::vector<double> temp_r(total, 0.0);
+    std::vector<double> temp_r2(total, 0.0);
     std::vector<double> temp_next(total, 0.0);
 
-    int64_t executed = 0;
-    for (int64_t step = 0; step < max_steps; ++step) {
-        if (step > 0 && step % 2 == 0) {
-            double cur_frob = 0.0;
-            for (int64_t i = 0; i < total; ++i) cur_frob += matrix_q_out[i] * matrix_q_out[i];
-            double cur_norm = std::sqrt(cur_frob);
-            if (cur_norm < 1e-12) cur_norm = 1e-12;
-            for (int64_t i = 0; i < total; ++i) matrix_q_out[i] /= cur_norm;
-        }
+    const double a = 15.0 / 8.0;
+    const double b = -10.0 / 8.0;
+    const double c = 3.0 / 8.0;
 
-        // R = Q * Q^T
+    int64_t executed = 0;
+    bool converged = false;
+
+    for (int64_t step = 0; step < max_steps; ++step) {
+        // 1. R = Q * Q^T
         #pragma omp parallel for schedule(static)
         for (int64_t i = 0; i < n; ++i) {
             for (int64_t j = 0; j < n; ++j) {
@@ -418,35 +459,59 @@ POLYDIM_EXPORT int polydim_cpp_gram_ns_polar_restart_v817(
             }
         }
 
-        // M = 3*I - R
-        std::vector<double> temp_m(total, 0.0);
-        for (int64_t i = 0; i < n; ++i) {
-            for (int64_t k = 0; k < n; ++k) {
-                temp_m[i * n + k] = (i == k ? 3.0 : 0.0) - temp_r[i * n + k];
-            }
-        }
-
-        // Q_next = 0.5 * M * Q (Cache-friendly i, k, j loop order with stride-1 along j)
+        // 2. R2 = R * R
         #pragma omp parallel for schedule(static)
         for (int64_t i = 0; i < n; ++i) {
             for (int64_t j = 0; j < n; ++j) {
-                temp_next[i * n + j] = 0.0;
-            }
-            for (int64_t k = 0; k < n; ++k) {
-                double mik = 0.5 * temp_m[i * n + k];
-                #pragma omp simd
-                for (int64_t j = 0; j < n; ++j) {
-                    temp_next[i * n + j] += mik * matrix_q_out[k * n + j];
+                double dot = 0.0;
+                #pragma omp simd reduction(+:dot)
+                for (int64_t k = 0; k < n; ++k) {
+                    dot += temp_r[i * n + k] * temp_r[k * n + j];
                 }
+                temp_r2[i * n + j] = dot;
+            }
+        }
+
+        // 3. M = a*I + b*R + c*R2, y Q_next = M * Q
+        #pragma omp parallel for schedule(static)
+        for (int64_t i = 0; i < n; ++i) {
+            for (int64_t j = 0; j < n; ++j) {
+                double dot = 0.0;
+                #pragma omp simd reduction(+:dot)
+                for (int64_t k = 0; k < n; ++k) {
+                    double m_ik = (i == k ? a : 0.0) + b * temp_r[i * n + k] + c * temp_r2[i * n + k];
+                    dot += m_ik * matrix_q_out[k * n + j];
+                }
+                temp_next[i * n + j] = dot;
             }
         }
 
         memcpy(matrix_q_out, temp_next.data(), total * sizeof(double));
         executed++;
+
+        // Medir convergencia ||Q^T Q - I||_F / sqrt(n)
+        double frob_err_sq = 0.0;
+        #pragma omp parallel for schedule(static) reduction(+:frob_err_sq)
+        for (int64_t i = 0; i < n; ++i) {
+            for (int64_t j = 0; j < n; ++j) {
+                double dot = 0.0;
+                #pragma omp simd reduction(+:dot)
+                for (int64_t k = 0; k < n; ++k) {
+                    dot += matrix_q_out[k * n + i] * matrix_q_out[k * n + j];
+                }
+                double diff = dot - (i == j ? 1.0 : 0.0);
+                frob_err_sq += diff * diff;
+            }
+        }
+        double iso_err = std::sqrt(frob_err_sq / static_cast<double>(n));
+        if (iso_err < 1e-4) {
+            converged = true;
+            break;
+        }
     }
 
     *steps_executed_out = static_cast<uint32_t>(executed);
-    *is_converged_out = 1;
+    *is_converged_out = converged ? 1 : 0;
 
     set_error_success(err);
     return 0;

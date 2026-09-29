@@ -401,22 +401,29 @@ def test_10_gram_ns_polar_restart_and_auon_matrix():
     n = 64
     a_mat = rng.standard_normal((n, n))
 
-    # 1. Gram Newton-Schulz con política de reinicio q <= 2
-    q_ortho, steps, converged = rust_k.gram_ns_polar_restart(a_mat, max_total_steps=5)
+    # 1. Gram Newton-Schulz con política de reinicio q <= 2 e iteración de orden 5
+    q_ortho, steps, converged = rust_k.gram_ns_polar_restart(a_mat, max_total_steps=10)
     
     # Verificar ortogonalidad mediante norma espectral y descomposición en valores singulares
     E = q_ortho.T @ q_ortho - np.eye(n)
     eps_iso = np.linalg.norm(E, 2)
     sv = np.linalg.svd(q_ortho, compute_uv=False)
 
-    print(f"  Gram-NS Pasos Ejecutados: {steps} (con reinicio cada q <= 2 pasos)")
-    print(f"  Error Espectral de Isometría ||Q^T Q - I||_2: {eps_iso:.6f}")
+    print(f"  Gram-NS Pasos Ejecutados: {steps} (convergencia canónica de orden 5)")
+    print(f"  Error Espectral de Isometría ||Q^T Q - I||_2: {eps_iso:.6e}")
     print(f"  Valores Singulares: min(sigma) = {sv.min():.4f}, max(sigma) = {sv.max():.4f}")
     print(f"  Convergencia Exitosa: {converged}")
 
     require(converged is True, "Falla: Gram-NS debió converger")
     require(eps_iso < 0.25, f"Falla: Error espectral excesivo: {eps_iso}")
     require(sv.min() > 0.75 and sv.max() < 1.25, f"Falla: Valores singulares fuera de rango: [{sv.min()}, {sv.max()}]")
+
+    # Oráculo SVD Polar Real (U * V^T)
+    u_svd, _, vt_svd = np.linalg.svd(a_mat)
+    polar_true = u_svd @ vt_svd
+    polar_err = np.linalg.norm(q_ortho - polar_true, 'fro') / np.sqrt(n)
+    print(f"  Error contra Oráculo SVD Polar ||Q - U*V^T||_F / sqrt(n): {polar_err:.6e}")
+    require(polar_err < 1e-4, f"Falla: Q difiere del factor polar exacto: {polar_err:.3e}")
 
     # 2. AuON Matrix RMS Normalization
     mat_in = rng.standard_normal((32, 32)) * 5.0

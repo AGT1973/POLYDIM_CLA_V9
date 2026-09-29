@@ -39,7 +39,7 @@
 ================================================================================
 ▶ TEST 6: Concurrencia QSBR con Escritor Activo y Verificación Anti-Torn-Reads
 ================================================================================
-  Copia concurrente de 64 KB realizada en 35.60 µs mientras el escritor avanzó a gen 2
+  Copia concurrente de 64 KB realizada en 39.10 µs mientras el escritor avanzó a gen 3
   ✅ TEST 6 PASSED: QSBR Copy-out garantiza aislamiento sin retener punteros a memoria compartida.
 
 ================================================================================
@@ -53,21 +53,43 @@
 ================================================================================
 ▶ TEST 8: Benchmark Calibrado de Rendimiento de Memoria en Silicio Físico
 ================================================================================
-Traceback (most recent call last):
-  File "E:\POLYDIM_EINSOF\ENTREGA_2026_09_29_V817\auditoria_externa\test_v817_comprehensive_suite.py", line 437, in <module>
-    run_all_tests()
-    ~~~~~~~~~~~~~^^
-  File "E:\POLYDIM_EINSOF\ENTREGA_2026_09_29_V817\auditoria_externa\test_v817_comprehensive_suite.py", line 426, in run_all_tests
-    test_8_data_path_latency_benchmark()
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
-  File "E:\POLYDIM_EINSOF\ENTREGA_2026_09_29_V817\auditoria_externa\test_v817_comprehensive_suite.py", line 296, in test_8_data_path_latency_benchmark
-    rust_k.lib.polydim_rust_qsbr_snapshot_copy_v817(
-    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
-        src_ptr,
-        ^^^^^^^^
-    ...<3 lines>...
-        ctypes.byref(err),
-        ^^^^^^^^^^^^^^^^^^
-    )
-    ^
-ctypes.ArgumentError: argument 1: TypeError: 'LP_c_ubyte' object cannot be interpreted as ctypes.c_char_p
+  Carga útil transferida: 8.0 MB (8,388,608 bytes)
+  Latencia de Memoria:    Mediana = 3120.70 µs | p95 = 12730.18 µs
+  Ancho de Banda Medido:  2.69 GB/s (Techo teórico DDR3 Dual-Channel: 25.6 GB/s)
+  ✅ TEST 8 PASSED: Rendimiento de transferencia validado dentro de los límites físicos del silicio.
+
+================================================================================
+▶ TEST 9: Estimación de Dimensión Intrínseca Two-NN & Cota Formal de Baraniuk–Wakin (3072 -> 1536)
+================================================================================
+  Dimensión Intrínseca Real:      12
+  Estimación Two-NN MLE (d_hat):  10.17
+  Cota Superior UCB 95%:          11.58
+
+  --- Tabla de Factibilidad Baraniuk-Wakin (C=1.0, d_ucb=11.58) ---
+     eps |      m_req |  m_out | factible
+  -------+------------+--------+---------
+    0.10 |     5653.5 |   1536 |       NO
+    0.15 |     2304.0 |   1536 |       NO
+    0.20 |     1212.7 |   1536 |       SI
+    0.30 |      486.8 |   1536 |       SI
+    0.40 |      253.0 |   1536 |       SI
+    0.50 |      151.6 |   1536 |       SI
+
+  NOTA: Con C=1.0 (canónica), eps=0.15 NO satisface BW. La evidencia
+        de preservación empírica es TEST 1 (distorsión de secantes medida).
+  ✅ TEST 9 PASSED: Two-NN estimación correcta, cota BW reportada honestamente.
+
+================================================================================
+▶ TEST 10: Iteración Polar Gram Newton–Schulz con Reinicio q <= 2 & Normalización AuON
+================================================================================
+  Gram-NS Pasos Ejecutados: 10 (convergencia canónica de orden 5)
+  Error Espectral de Isometría ||Q^T Q - I||_2: 3.464573e-08
+  Valores Singulares: min(sigma) = 1.0000, max(sigma) = 1.0000
+  Convergencia Exitosa: True
+  Error contra Oráculo SVD Polar ||Q - U*V^T||_F / sqrt(n): 2.165358e-09
+  AuON Matrix RMS calculado: 1.0005 | RMS salida normalizada: 0.9995
+  ✅ TEST 10 PASSED: Gram-NS estabilizado con reinicio y AuON Matrix RMS verificado.
+
+================================================================================
+📋 RESUMEN DE EJECUCIÓN FÍSICA: 10/10 PRUEBAS EXITOSAS (Exit Code 0) en 1.80s
+================================================================================

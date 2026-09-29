@@ -190,8 +190,9 @@ pub extern "C" fn polydim_rust_auon_matrix_rms_normalize_v817(
         }
         let rms = (cosh_sq_sum / (n_elements as f64)).sqrt();
 
-        // 3. Normalización final por (rms + 1e-8)
-        let scale = 1.0 / (rms + 1e-8);
+        // 3. Normalización final por (rms + 1e-8) a RMS unitario
+        let sqrt_n = (n_elements as f64).sqrt();
+        let scale = sqrt_n / (rms + 1e-8);
         for i in 0..n_elements {
             out_slice[i] = (in_slice[i] / f_norm) * scale;
         }
@@ -646,30 +647,60 @@ pub extern "C" fn polydim_rust_gram_ns_polar_restart_v817(
         // Copiar X a Q
         q_slice.copy_from_slice(x_slice);
 
-        // Normalización inicial por norma espectral/Frobenius estimada
-        let mut frob_sq = 0.0f64;
-        for &v in q_slice.iter() { frob_sq += v * v; }
-        let norm = frob_sq.sqrt().max(1e-12);
-        for v in q_slice.iter_mut() { *v /= norm; }
+        // Pre-escalado espectral garantizado por Power Iteration (4 iteraciones para acotar sigma_max)
+        let mut v_vec = vec![1.0f64 / (n as f64).sqrt(); n];
+        for _ in 0..4 {
+            let mut w_vec = vec![0.0f64; n];
+            for i in 0..n {
+                let mut sum = 0.0f64;
+                for j in 0..n {
+                    sum += q_slice[i * n + j] * v_vec[j];
+                }
+                w_vec[i] = sum;
+            }
+            let mut v_next = vec![0.0f64; n];
+            for j in 0..n {
+                let mut sum = 0.0f64;
+                for i in 0..n {
+                    sum += q_slice[i * n + j] * w_vec[i];
+                }
+                v_next[j] = sum;
+            }
+            let norm_v: f64 = v_next.iter().map(|&x| x * x).sum::<f64>().sqrt();
+            if norm_v > 1e-12 {
+                for x in v_next.iter_mut() { *x /= norm_v; }
+            }
+            v_vec = v_next;
+        }
 
-        let max_steps = max_total_steps.clamp(1, 10) as usize;
+        let mut w_final = 0.0f64;
+        for i in 0..n {
+            let mut sum = 0.0f64;
+            for j in 0..n {
+                sum += q_slice[i * n + j] * v_vec[j];
+            }
+            w_final += sum * sum;
+        }
+        let s_est = w_final.sqrt();
+        let s_bound = (s_est * 1.05).max(1e-12);
+        for v in q_slice.iter_mut() { *v /= s_bound; }
+
+        let max_steps = max_total_steps.clamp(1, 20) as usize;
         let mut executed = 0usize;
+        let mut converged = false;
 
-        // Bucle con reinicio (máximo 2 pasos por segmento Gram continuo)
         let mut temp_r = vec![0.0f64; total_elems];
+        let mut temp_r2 = vec![0.0f64; total_elems];
         let mut temp_next = vec![0.0f64; total_elems];
 
-        for step in 0..max_steps {
-            // Reinicio explícito de Gram cada 2 iteraciones
-            if step > 0 && step % 2 == 0 {
-                // Paso de reinicio: re-escalar y re-estimar Gram
-                let mut cur_frob = 0.0f64;
-                for &v in q_slice.iter() { cur_frob += v * v; }
-                let cur_norm = cur_frob.sqrt().max(1e-12);
-                for v in q_slice.iter_mut() { *v /= cur_norm; }
-            }
+        // Coeficientes canónicos de orden 5: p(x) = 1/8 * (15x - 10x^3 + 3x^5)
+        // p(1) = 1.0, p'(1) = 0.0, p''(1) = 0.0 (convergencia cúbica exacta al factor polar)
+        let a = 15.0f64 / 8.0f64;
+        let b = -10.0f64 / 8.0f64;
+        let c = 3.0f64 / 8.0f64;
 
-            // R = Q * Q^T
+        for _step in 0..max_steps {
+            // 1. R = Q * Q^T
             for i in 0..n {
                 for j in 0..n {
                     let mut dot = 0.0f64;
@@ -680,25 +711,55 @@ pub extern "C" fn polydim_rust_gram_ns_polar_restart_v817(
                 }
             }
 
-            // Q_next = 0.5 * Q * (3*I - R)  [Paso Polar Express estable]
+            // 2. R2 = R * R
             for i in 0..n {
                 for j in 0..n {
                     let mut dot = 0.0f64;
                     for k in 0..n {
-                        let factor = if i == k { 3.0 } else { 0.0 } - temp_r[i * n + k];
-                        dot += q_slice[k * n + j] * factor;
+                        dot += temp_r[i * n + k] * temp_r[k * n + j];
                     }
-                    temp_next[i * n + j] = 0.5 * dot;
+                    temp_r2[i * n + j] = dot;
+                }
+            }
+
+            // 3. M = a*I + b*R + c*R2, y Q_next = M * Q
+            for i in 0..n {
+                for j in 0..n {
+                    let mut dot = 0.0f64;
+                    for k in 0..n {
+                        let m_ik = (if i == k { a } else { 0.0 }) + b * temp_r[i * n + k] + c * temp_r2[i * n + k];
+                        dot += m_ik * q_slice[k * n + j];
+                    }
+                    temp_next[i * n + j] = dot;
                 }
             }
 
             q_slice.copy_from_slice(&temp_next);
             executed += 1;
+
+            // Medir convergencia ||Q^T Q - I||_F / sqrt(n)
+            let mut frob_err_sq = 0.0f64;
+            for i in 0..n {
+                for j in 0..n {
+                    let mut dot = 0.0f64;
+                    for k in 0..n {
+                        dot += q_slice[k * n + i] * q_slice[k * n + j];
+                    }
+                    let eye = if i == j { 1.0f64 } else { 0.0f64 };
+                    let diff = dot - eye;
+                    frob_err_sq += diff * diff;
+                }
+            }
+            let iso_err = (frob_err_sq / (n as f64)).sqrt();
+            if iso_err < 1e-4 {
+                converged = true;
+                break;
+            }
         }
 
         unsafe {
             *steps_executed_out = executed as c_uint;
-            *is_converged_out = 1u8;
+            *is_converged_out = if converged { 1u8 } else { 0u8 };
             if !err.is_null() { (*err).write_success(); }
         }
 
