@@ -1,120 +1,100 @@
 # ============================================================================
-# POLYDIM V765 — KAGGLE CLOUD TPU BENCHMARK (GOOGLE TPU v3-8 / XLA)
-# High-Dimensional Manifold S^(D-1) on TPU Systolic Array (D = 10,000,000)
+# POLYDIM V900 — KAGGLE CLOUD TPU BENCHMARK (TPU v3-8 / JAX XLA)
+# Serie 900 Axiomatic Verification on TPU: Cayley-Stiefel SMW & Clifford Rotors
 # ============================================================================
 
-import os
-import sys
 import time
 import json
 import numpy as np
 
-def run_tpu_benchmark():
-    print("=" * 78)
-    print("POLYDIM V765 — KAGGLE TPU v3-8 BENCHMARK (GOOGLE XLA SYSTOLIC CORES)")
-    print("=" * 78)
+def run_v900_tpu_benchmark():
+    print("=" * 80)
+    print("🚀 POLYDIM V900 — KAGGLE CLOUD TPU BENCHMARK (JAX XLA)")
+    print("=" * 80)
 
-    # Detect TPU environment (PyTorch XLA or JAX or TensorFlow)
-    tpu_backend = "none"
     try:
-        import torch_xla
-        import torch_xla.core.xla_model as xm
-        device = xm.xla_device()
-        tpu_backend = f"torch_xla ({xm.xla_device_hw(device)})"
-        print(f"[OK] TPU Device Detected: {device} | HW: {tpu_backend}")
+        import jax
+        import jax.numpy as jnp
+        devices = jax.devices()
+        tpu_count = len(devices)
+        device_kind = devices[0].device_kind
+        print(f"JAX Device Kind: {device_kind} | Device Count: {tpu_count}")
     except Exception as e:
-        print(f"[INFO] PyTorch XLA not found, attempting JAX TPU backend... ({e})")
-        try:
-            import jax
-            import jax.numpy as jnp
-            devices = jax.devices()
-            tpu_backend = f"JAX TPU ({devices})"
-            print(f"[OK] JAX TPU Detected: {devices}")
-        except Exception as e2:
-            print(f"[INFO] Running in fallback CPU/GPU mode for testing: {e2}")
-            import torch
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            tpu_backend = f"Fallback ({device})"
+        print(f"Warning: JAX initialization fallback: {e}")
+        import numpy as jnp
+        device_kind = "CPU"
+        tpu_count = 1
 
     results = {
-        "backend": tpu_backend,
+        "version": "V900",
+        "device_kind": device_kind,
+        "device_count": tpu_count,
+        "timestamp": time.time(),
         "benchmarks": []
     }
 
-    # 1. Asymptotic Rodrigues on TPU up to D = 10,000,000 (80 MB Vector)
-    dims = [100000, 1000000, 10000000]
-    print("\n[TPU BENCHMARK 1] Asymptotic Rodrigues Geodesic on S^(D-1)")
-    
-    if "torch_xla" in tpu_backend:
-        import torch
-        for D in dims:
-            try:
-                y = torch.randn(D, dtype=torch.float32, device=device)
-                y = y / torch.norm(y)
-                u = torch.randn(D, dtype=torch.float32, device=device)
-                u = u / torch.norm(u)
-                v = torch.randn(D, dtype=torch.float32, device=device)
-                v = v - torch.dot(u, v) * u
-                v = v / torch.norm(v)
+    # 1. Stiefel Cayley SMW on TPU
+    print("\n[BENCHMARK 1] Cayley-Stiefel Matrix-Free Retraction on TPU (D=1,000,000, K=32)")
+    D = 1000000
+    K = 32
+    tau = 0.001
 
-                xm.mark_step()
-                t0 = time.perf_counter()
+    try:
+        np.random.seed(42)
+        x_raw = np.random.randn(D, K)
+        x_ortho, _ = np.linalg.qr(x_raw)
+        x_ortho = x_ortho[:, :K].astype(np.float64)
+        g_raw = (np.random.randn(D, K) * 0.1).astype(np.float64)
 
-                theta = 0.5
-                vers = 2.0 * torch.sin(torch.tensor(0.5 * theta, device=device)) ** 2
-                sn = torch.sin(torch.tensor(theta, device=device))
+        if "jax" in sys.modules:
+            X = jax.device_put(x_ortho)
+            G = jax.device_put(g_raw)
+            
+            @jax.jit
+            def stiefel_smw_step(X_in, G_in, tau_step):
+                A = jnp.dot(X_in.T, G_in)
+                B = jnp.dot(X_in.T, X_in)
+                C = jnp.dot(G_in.T, G_in)
+                half_tau = 0.5 * tau_step
+                I_k = jnp.eye(K)
+                
+                M_top = jnp.hstack([I_k - half_tau * A, half_tau * B])
+                M_bot = jnp.hstack([-half_tau * C, I_k + half_tau * A.T])
+                M = jnp.vstack([M_top, M_bot])
+                
+                RHS = jnp.vstack([B, A.T])
+                Z = jnp.linalg.solve(M, RHS)
+                Z1 = Z[:K, :]
+                Z2 = Z[K:, :]
+                
+                Y = X_in + tau_step * (jnp.dot(G_in, Z1) - jnp.dot(X_in, Z2))
+                return Y
 
-                yu = torch.dot(y, u)
-                yv = torch.dot(y, v)
-                alpha = -vers * yu - sn * yv
-                beta = -vers * yv + sn * yu
-                y_out = y + alpha * u + beta * v
+            # Warmup
+            Y_warm = stiefel_smw_step(X, G, tau).block_until_ready()
 
-                xm.mark_step()
-                t1 = time.perf_counter()
+            # Benchmark
+            t0 = time.perf_counter()
+            for _ in range(5):
+                Y_res = stiefel_smw_step(X, G, tau).block_until_ready()
+            dt_ms = (time.perf_counter() - t0) * 1000.0 / 5.0
 
-                dt_ms = (t1 - t0) * 1000.0
-                norm_err = abs(torch.norm(y_out).item() - 1.0)
-                print(f"  -> D = {D:>10,}: TPU Latency = {dt_ms:>8.3f} ms | Norm Error = {norm_err:>.3e}")
-                results["benchmarks"].append({"D": D, "latency_ms": dt_ms, "norm_err": norm_err})
-            except Exception as ex:
-                print(f"  -> D = {D:,} FAILED: {ex}")
-    else:
-        # JAX or PyTorch standard runner
-        import torch
-        for D in dims:
-            try:
-                y = torch.randn(D, dtype=torch.float32)
-                y = y / torch.norm(y)
-                u = torch.randn(D, dtype=torch.float32)
-                u = u / torch.norm(u)
-                v = torch.randn(D, dtype=torch.float32)
-                v = v - torch.dot(u, v) * u
-                v = v / torch.norm(v)
+            yty = jnp.dot(Y_res.T, Y_res)
+            ortho_err = float(jnp.linalg.norm(yty - jnp.eye(K), 'fro') / np.sqrt(K))
+            print(f"  -> TPU D = {D:,}, K = {K}: Latency = {dt_ms:.3f} ms | Ortho Error = {ortho_err:.3e}")
+            results["benchmarks"].append({
+                "name": "Stiefel_Cayley_SMW_TPU",
+                "D": D, "K": K, "latency_ms": dt_ms, "ortho_error": ortho_err
+            })
+    except Exception as e:
+        print(f"  -> Stiefel TPU benchmark failed: {e}")
 
-                t0 = time.perf_counter()
-                theta = 0.5
-                vers = 2.0 * np.sin(0.5 * theta) ** 2
-                sn = np.sin(theta)
-
-                yu = torch.dot(y, u)
-                yv = torch.dot(y, v)
-                alpha = -vers * yu - sn * yv
-                beta = -vers * yv + sn * yu
-                y_out = y + alpha * u + beta * v
-                t1 = time.perf_counter()
-
-                dt_ms = (t1 - t0) * 1000.0
-                norm_err = abs(torch.norm(y_out).item() - 1.0)
-                print(f"  -> D = {D:>10,}: Latency = {dt_ms:>8.3f} ms | Norm Error = {norm_err:>.3e}")
-                results["benchmarks"].append({"D": D, "latency_ms": dt_ms, "norm_err": norm_err})
-            except Exception as ex:
-                print(f"  -> D = {D:,} FAILED: {ex}")
-
-    os.makedirs("kaggle_output", exist_ok=True)
-    with open("kaggle_output/tpu_results.json", "w", encoding="utf-8") as f:
+    # Guardar resultados
+    out_path = "v900_tpu_benchmark_results.json"
+    with open(out_path, "w") as f:
         json.dump(results, f, indent=2)
-    print(f"\n[OK] TPU Benchmark finished. Telemetry written to kaggle_output/tpu_results.json")
+    print(f"\n[OK] Benchmarks TPU V900 completados y guardados en {out_path}")
 
 if __name__ == "__main__":
-    run_tpu_benchmark()
+    import sys
+    run_v900_tpu_benchmark()

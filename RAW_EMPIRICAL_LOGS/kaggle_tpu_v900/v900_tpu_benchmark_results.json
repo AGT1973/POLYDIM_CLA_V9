@@ -1,0 +1,15 @@
+{
+  "version": "V900",
+  "device_kind": "cpu",
+  "device_count": 1,
+  "timestamp": 1790718022.0792499,
+  "benchmarks": [
+    {
+      "name": "Stiefel_Cayley_SMW_TPU",
+      "D": 1000000,
+      "K": 32,
+      "latency_ms": 219.72219799999948,
+      "ortho_error": 2.7639867994366796e-07
+    }
+  ]
+}

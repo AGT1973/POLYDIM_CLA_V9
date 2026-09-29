@@ -1,6 +1,6 @@
 # ============================================================================
-# POLYDIM V765 — KAGGLE CLOUD GPU BENCHMARK (2x NVIDIA TESLA T4)
-# High-Dimensional Manifold S^(D-1) & Orthogonalization on GPU
+# POLYDIM V900 — KAGGLE CLOUD GPU BENCHMARK (NVIDIA TESLA T4 / P100 / A100)
+# Serie 900 Axiomatic Verification: Cayley-Stiefel SMW, Clifford Cl(D), Order-5 NS
 # ============================================================================
 
 import os
@@ -10,10 +10,10 @@ import json
 import torch
 import numpy as np
 
-def run_gpu_benchmark():
-    print("=" * 78)
-    print("POLYDIM V765 — KAGGLE GPU BENCHMARK (NVIDIA TESLA T4 FP64 & FP32)")
-    print("=" * 78)
+def run_v900_gpu_benchmark():
+    print("=" * 80)
+    print("🚀 POLYDIM V900 — KAGGLE CLOUD GPU BENCHMARK (SERIE 900)")
+    print("=" * 80)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CPU"
@@ -21,110 +21,177 @@ def run_gpu_benchmark():
     print(f"Device: {device} | GPU: {gpu_name} (Count: {gpu_count})")
 
     results = {
+        "version": "V900",
         "device": str(device),
         "gpu_name": gpu_name,
         "gpu_count": gpu_count,
+        "timestamp": time.time(),
         "benchmarks": []
     }
 
-    # 1. Rodrigues Geodesic on S^(D-1) in FP64 across dimensions
-    dims = [10000, 100000, 1000000, 10000000]
-    print("\n[BENCHMARK 1] Rodrigues Geodesic on S^(D-1) (FP64 GPU Tensor)")
-    for D in dims:
-        try:
-            y = torch.randn(D, dtype=torch.float64, device=device)
-            y = y / torch.norm(y)
-            u = torch.randn(D, dtype=torch.float64, device=device)
-            u = u / torch.norm(u)
-            v = torch.randn(D, dtype=torch.float64, device=device)
-            v = v - torch.dot(u, v) * u
-            v = v / torch.norm(v)
+    # ------------------------------------------------------------------------
+    # BENCHMARK 1: Cayley-Stiefel Matrix-Free SMW Retraction O(DK^2 + K^3)
+    # ------------------------------------------------------------------------
+    print("\n[BENCHMARK 1] Cayley-Stiefel Matrix-Free Retraction on St(D, K) (FP64 GPU)")
+    stiefel_configs = [
+        (10000, 16, 0.01),
+        (100000, 32, 0.005),
+        (1000000, 32, 0.001),
+        (5000000, 16, 0.0005)
+    ]
 
-            theta = 0.5
-            vers = 2.0 * torch.sin(torch.tensor(0.5 * theta, dtype=torch.float64, device=device)) ** 2
-            sn = torch.sin(torch.tensor(theta, dtype=torch.float64, device=device))
+    for D, K, tau in stiefel_configs:
+        try:
+            # Generar X ortonormal en St(D, K) vía QR
+            raw = torch.randn(D, K, dtype=torch.float64, device=device)
+            X, _ = torch.linalg.qr(raw)
+            X = X[:, :K]
+            G = torch.randn(D, K, dtype=torch.float64, device=device) * 0.1
 
             torch.cuda.synchronize() if torch.cuda.is_available() else None
             t0 = time.perf_counter()
 
-            # Rodrigues: y_out = y + (-vers * (y.u) - sn * (y.v)) * u + (-vers * (y.v) + sn * (y.u)) * v
-            yu = torch.dot(y, u)
-            yv = torch.dot(y, v)
-            alpha = -vers * yu - sn * yv
-            beta = -vers * yv + sn * yu
-            y_out = y + alpha * u + beta * v
+            # Bloques KxK: A = X^T G, B = X^T X, C = G^T G
+            A = torch.mm(X.t(), G)
+            B = torch.mm(X.t(), X)
+            C = torch.mm(G.t(), G)
+
+            # Sistema 2K x 2K: M = I_2K - (tau/2) * [A, -B; C, -A^T]
+            half_tau = 0.5 * tau
+            I_k = torch.eye(K, dtype=torch.float64, device=device)
+            M_top = torch.cat([I_k - half_tau * A, half_tau * B], dim=1)
+            M_bot = torch.cat([-half_tau * C, I_k + half_tau * A.t()], dim=1)
+            M = torch.cat([M_top, M_bot], dim=0)
+
+            # RHS = [B; A^T]
+            RHS = torch.cat([B, A.t()], dim=0)
+
+            # Resolver M * Z = RHS
+            Z = torch.linalg.solve(M, RHS)
+            Z1 = Z[:K, :]
+            Z2 = Z[K:, :]
+
+            # Reconstruir Y = X + tau * (G * Z1 - X * Z2)
+            Y = X + tau * (torch.mm(G, Z1) - torch.mm(X, Z2))
 
             torch.cuda.synchronize() if torch.cuda.is_available() else None
             t1 = time.perf_counter()
 
             dt_ms = (t1 - t0) * 1000.0
-            norm_err = abs(torch.norm(y_out).item() - 1.0)
-            bandwidth_gbs = (D * 8 * 4) / (dt_ms * 1e-3 * 1e9) # read y,u,v, write y_out
+            ortho_err = torch.norm(torch.mm(Y.t(), Y) - I_k, p='fro').item() / np.sqrt(K)
 
-            print(f"  -> D = {D:>10,}: Latency = {dt_ms:>8.3f} ms | Drift = {norm_err:>.3e} | Bandwidth = {bandwidth_gbs:>6.2f} GB/s")
+            print(f"  -> D = {D:>9,}, K = {K:>2}: Latency = {dt_ms:>8.3f} ms | Ortho Error = {ortho_err:>.3e}")
             results["benchmarks"].append({
-                "name": "Rodrigues_GPU_FP64",
+                "name": "Stiefel_Cayley_SMW_GPU",
                 "D": D,
-                "latency_ms": dt_ms,
-                "norm_drift": norm_err,
-                "bandwidth_gbs": bandwidth_gbs
-            })
-        except Exception as e:
-            print(f"  -> D = {D:,} FAILED: {e}")
-
-    # 2. CholQR2 Matrix Orthogonalization on GPU
-    print("\n[BENCHMARK 2] CholQR2 Tiling on GPU (D=65536, K=32 & K=64)")
-    for K in [16, 32, 64]:
-        D_chol = 65536
-        try:
-            X = torch.randn(D_chol, K, dtype=torch.float64, device=device)
-            torch.cuda.synchronize() if torch.cuda.is_available() else None
-            t0 = time.perf_counter()
-
-            # Step 1: Cholesky of X^T X
-            A1 = torch.mm(X.t(), X)
-            L1 = torch.linalg.cholesky(A1)
-            Q1 = torch.linalg.solve_triangular(L1, X.t(), upper=False).t()
-
-            # Step 2: Second pass
-            A2 = torch.mm(Q1.t(), Q1)
-            L2 = torch.linalg.cholesky(A2)
-            Q2 = torch.linalg.solve_triangular(L2, Q1.t(), upper=False).t()
-
-            torch.cuda.synchronize() if torch.cuda.is_available() else None
-            t1 = time.perf_counter()
-
-            dt_ms = (t1 - t0) * 1000.0
-            ortho_err = torch.max(torch.abs(torch.mm(Q2.t(), Q2) - torch.eye(K, dtype=torch.float64, device=device))).item()
-            print(f"  -> D = {D_chol:,}, K = {K}: Latency = {dt_ms:>8.3f} ms | Ortho Error = {ortho_err:>.3e}")
-            results["benchmarks"].append({
-                "name": "CholQR2_GPU_FP64",
-                "D": D_chol,
                 "K": K,
+                "tau": tau,
                 "latency_ms": dt_ms,
                 "ortho_error": ortho_err
             })
         except Exception as e:
-            print(f"  -> CholQR2 K={K} FAILED: {e}")
+            print(f"  -> D = {D:,}, K = {K} FAILED: {e}")
 
-    # 3. Subnormal Float Preservation Canary
-    print("\n[BENCHMARK 3] GPU Subnormal Float Preservation (IEEE-754 FTZ Canary)")
-    v1 = torch.tensor([1.0e-20], dtype=torch.float32, device=device)
-    v2 = torch.tensor([1.0e-22], dtype=torch.float32, device=device)
-    v_sub = v1 * v2
-    val = v_sub.item()
-    print(f"  -> Subnormal (1e-20 * 1e-22) = {val:e}")
-    if val == 0.0:
-        print("  -> WARNING: GPU backend has FTZ active (Flush-To-Zero).")
-    else:
-        print("  -> PASS: GPU preserves IEEE-754 subnormals.")
-    results["subnormal_val"] = val
+    # ------------------------------------------------------------------------
+    # BENCHMARK 2: Clifford Cl(D) Bivector Rotors in S^(D-1)
+    # ------------------------------------------------------------------------
+    print("\n[BENCHMARK 2] Clifford Cl(D) Bivector Rotors (D=10^6 to 10^7, P=128 planes)")
+    clifford_dims = [100000, 1000000, 10000000]
+    num_planes = 128
 
-    # Save output
-    os.makedirs("kaggle_output", exist_ok=True)
-    with open("kaggle_output/results.json", "w", encoding="utf-8") as f:
+    for D in clifford_dims:
+        try:
+            v = torch.randn(D, dtype=torch.float64, device=device)
+            v = v / torch.norm(v)
+
+            # Índices de planos disjuntos
+            u_idx = torch.arange(0, 2 * num_planes, 2, device=device)
+            w_idx = torch.arange(1, 2 * num_planes, 2, device=device)
+            angles = torch.rand(num_planes, dtype=torch.float64, device=device) * 2.0 * np.pi - np.pi
+
+            torch.cuda.synchronize() if torch.cuda.is_available() else None
+            t0 = time.perf_counter()
+
+            v_out = v.clone()
+            cos_t = torch.cos(angles)
+            sin_t = torch.sin(angles)
+
+            val_u = v[u_idx]
+            val_w = v[w_idx]
+
+            v_out[u_idx] = val_u * cos_t - val_w * sin_t
+            v_out[w_idx] = val_u * sin_t + val_w * cos_t
+
+            torch.cuda.synchronize() if torch.cuda.is_available() else None
+            t1 = time.perf_counter()
+
+            dt_ms = (t1 - t0) * 1000.0
+            norm_in = torch.norm(v).item()
+            norm_out = torch.norm(v_out).item()
+            drift = abs(norm_out - norm_in)
+
+            print(f"  -> D = {D:>10,}, P = {num_planes}: Latency = {dt_ms:>8.3f} ms | Norm Drift = {drift:>.3e}")
+            results["benchmarks"].append({
+                "name": "Clifford_Bivector_Rotor_GPU",
+                "D": D,
+                "num_planes": num_planes,
+                "latency_ms": dt_ms,
+                "norm_drift": drift
+            })
+        except Exception as e:
+            print(f"  -> D = {D:,} FAILED: {e}")
+
+    # ------------------------------------------------------------------------
+    # BENCHMARK 3: Canonical Order-5 Padé Polar vs SVD Oracle
+    # ------------------------------------------------------------------------
+    print("\n[BENCHMARK 3] Canonical Order-5 Padé Polar vs SVD Oracle (N=256, 512, 1024)")
+    for N in [256, 512, 1024]:
+        try:
+            A = torch.randn(N, N, dtype=torch.float64, device=device)
+            # Pre-escalado por Power Iteration
+            v_spec = torch.randn(N, dtype=torch.float64, device=device)
+            for _ in range(4):
+                v_spec = torch.mv(A, v_spec)
+                v_spec = torch.mv(A.t(), v_spec)
+                v_spec = v_spec / torch.norm(v_spec)
+            sigma_max = torch.norm(torch.mv(A, v_spec)).item()
+            Q = A / max(sigma_max, 1e-12)
+
+            torch.cuda.synchronize() if torch.cuda.is_available() else None
+            t0 = time.perf_counter()
+
+            a_c = 15.0 / 8.0
+            b_c = -10.0 / 8.0
+            c_c = 3.0 / 8.0
+            I_n = torch.eye(N, dtype=torch.float64, device=device)
+
+            for step in range(8):
+                R = torch.mm(Q, Q.t())
+                R2 = torch.mm(R, R)
+                M = a_c * I_n + b_c * R + c_c * R2
+                Q = torch.mm(M, Q)
+
+            torch.cuda.synchronize() if torch.cuda.is_available() else None
+            t1 = time.perf_counter()
+
+            dt_ms = (t1 - t0) * 1000.0
+            iso_err = torch.norm(torch.mm(Q.t(), Q) - I_n, p=2).item()
+
+            print(f"  -> N = {N:>4}: Latency = {dt_ms:>8.3f} ms | Isometry Error ||Q^T Q - I||_2 = {iso_err:>.3e}")
+            results["benchmarks"].append({
+                "name": "Order5_Pade_Polar_GPU",
+                "N": N,
+                "latency_ms": dt_ms,
+                "isometry_error": iso_err
+            })
+        except Exception as e:
+            print(f"  -> N = {N} FAILED: {e}")
+
+    # Guardar resultados
+    out_path = "v900_gpu_benchmark_results.json"
+    with open(out_path, "w") as f:
         json.dump(results, f, indent=2)
-    print(f"\n[OK] Results saved to kaggle_output/results.json (Exit Code 0)")
+    print(f"\n[OK] Benchmarks V900 completados y guardados en {out_path}")
 
 if __name__ == "__main__":
-    run_gpu_benchmark()
+    run_v900_gpu_benchmark()

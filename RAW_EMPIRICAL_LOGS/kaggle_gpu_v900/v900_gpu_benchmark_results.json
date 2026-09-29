@@ -1,0 +1,80 @@
+{
+  "version": "V900",
+  "device": "cuda",
+  "gpu_name": "Tesla T4",
+  "gpu_count": 2,
+  "timestamp": 1790718014.5444148,
+  "benchmarks": [
+    {
+      "name": "Stiefel_Cayley_SMW_GPU",
+      "D": 10000,
+      "K": 16,
+      "tau": 0.01,
+      "latency_ms": 175.72838399996726,
+      "ortho_error": 3.5242661186859e-16
+    },
+    {
+      "name": "Stiefel_Cayley_SMW_GPU",
+      "D": 100000,
+      "K": 32,
+      "tau": 0.005,
+      "latency_ms": 38.97902900001782,
+      "ortho_error": 4.134728118287903e-16
+    },
+    {
+      "name": "Stiefel_Cayley_SMW_GPU",
+      "D": 1000000,
+      "K": 32,
+      "tau": 0.001,
+      "latency_ms": 152.20287599998983,
+      "ortho_error": 4.587146021136018e-16
+    },
+    {
+      "name": "Stiefel_Cayley_SMW_GPU",
+      "D": 5000000,
+      "K": 16,
+      "tau": 0.0005,
+      "latency_ms": 612.8018800000063,
+      "ortho_error": 6.870516579995938e-16
+    },
+    {
+      "name": "Clifford_Bivector_Rotor_GPU",
+      "D": 100000,
+      "num_planes": 128,
+      "latency_ms": 61.54714000001604,
+      "norm_drift": 0.0
+    },
+    {
+      "name": "Clifford_Bivector_Rotor_GPU",
+      "D": 1000000,
+      "num_planes": 128,
+      "latency_ms": 0.3144629999951576,
+      "norm_drift": 0.0
+    },
+    {
+      "name": "Clifford_Bivector_Rotor_GPU",
+      "D": 10000000,
+      "num_planes": 128,
+      "latency_ms": 0.7660789999590634,
+      "norm_drift": 0.0
+    },
+    {
+      "name": "Order5_Pade_Polar_GPU",
+      "N": 256,
+      "latency_ms": 5.0720269999828815,
+      "isometry_error": 1.481403030184628
+    },
+    {
+      "name": "Order5_Pade_Polar_GPU",
+      "N": 512,
+      "latency_ms": 33.52158999996391,
+      "isometry_error": 1.6986210663713546
+    },
+    {
+      "name": "Order5_Pade_Polar_GPU",
+      "N": 1024,
+      "latency_ms": 255.29705799999647,
+      "isometry_error": 2.0459314582656822
+    }
+  ]
+}
