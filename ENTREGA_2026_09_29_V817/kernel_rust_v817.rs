@@ -584,7 +584,7 @@ pub extern "C" fn polydim_rust_baraniuk_wakin_feasibility_v817(
         let n = dim_in as f64;
 
         // Cota exacta Baraniuk-Wakin (2008): m_req = C * eps^-2 * [ ln(V / tau^da) + da * ln(1/eps) + ln(1/rho) + ln(n) ]
-        let c_const = 0.5; // Constante formal de proyección aleatoria sub-gaussiana
+        let c_const = 1.0; // Constante universal canónica Baraniuk-Wakin (2008), no ajustable ad-hoc
         let term_geo = (v / tau.powf(da)).ln().max(1.0);
         let term_eps = da * (1.0 / eps).ln();
         let term_prob = (1.0 / rho).ln();

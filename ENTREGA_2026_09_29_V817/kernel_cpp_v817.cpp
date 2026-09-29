@@ -342,7 +342,7 @@ POLYDIM_EXPORT int polydim_cpp_baraniuk_wakin_feasibility_v817(
     double rho = failure_rho;
     double n = static_cast<double>(dim_in);
 
-    double c_const = 0.5;
+    double c_const = 1.0; // Canonical universal constant Baraniuk-Wakin (2008)
     double term_geo = std::max(std::log(v / std::pow(tau, da)), 1.0);
     double term_eps = da * std::log(1.0 / eps);
     double term_prob = std::log(1.0 / rho);

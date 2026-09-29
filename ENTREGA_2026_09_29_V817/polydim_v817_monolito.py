@@ -151,9 +151,9 @@ class PolydimRustKernelV817:
         # QSBR Snapshot Copy
         self.lib.polydim_rust_qsbr_snapshot_copy_v817.restype = ctypes.c_int
         self.lib.polydim_rust_qsbr_snapshot_copy_v817.argtypes = [
-            ctypes.c_char_p,
+            ctypes.c_void_p,
             ctypes.c_size_t,
-            ctypes.c_char_p,
+            ctypes.c_void_p,
             ctypes.POINTER(ctypes.c_size_t),
             ctypes.POINTER(PolydimErrorV817),
         ]
@@ -497,9 +497,9 @@ class PolydimCppKernelV817:
         # QSBR Snapshot Copy
         self.lib.polydim_cpp_qsbr_snapshot_copy_v817.restype = ctypes.c_int
         self.lib.polydim_cpp_qsbr_snapshot_copy_v817.argtypes = [
-            ctypes.c_char_p,
+            ctypes.c_void_p,
             ctypes.c_size_t,
-            ctypes.c_char_p,
+            ctypes.c_void_p,
             ctypes.POINTER(ctypes.c_size_t),
             ctypes.POINTER(PolydimErrorV817),
         ]
