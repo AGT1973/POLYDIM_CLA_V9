@@ -32,3 +32,9 @@
 - **BR-004/006 (L2 Overflow):** Validado. El kernel C++ ya implementaba un esquema seguro de FMA Isolation/Scaling en el bucle principal. Resistente a hiper-cuantización y escalares FP64.
 - **BR-002 (Fail-Fast JL):** Python tests refactorizados a os._exit(1) para bypass de handlers y evitar deadlock en pipelines distribuidos.
 - **FIRE (ICLR 2026):** Validado como necesidad crítica para nodos ML. Requiere instrumentación en V903 para evitar plasticity death en Retracciones Stiefel.
+
+
+## Ingesta de Sabueso 903_2.md (Malloc Contention & NaN Attack)
+- **Malloc Contention:** Validado el uso de Buffers Thread-Local pre-asignados en C++ y Rust fuera del bucle #pragma omp parallel for para evitar la serialización del heap de Windows (gcc 14.2 libgomp limitation).
+- **False Sharing:** Validado. El uso de arrays pre-mapeados (	hread_dists) mitiga el false sharing al mantener bloques de trabajo contiguos separados por 	id * stride.
+- **NaN Adversarial Attack:** Validada matemáticamente la violación de *Strict Weak Ordering* en std::sort causada por NaNs. std::isfinite antes de encolar es la mitigación (N)$ correcta para preservar asintótica.

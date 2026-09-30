@@ -319,12 +319,15 @@ POLYDIM_EXPORT int polydim_cpp_two_nn_intrinsic_dim_v902(
         std::vector<int> valid_flags(n, 0);
 
         int num_threads = omp_get_max_threads();
-        std::vector<double> thread_dists(num_threads * n, 0.0);
+        // Anti-false-sharing: pad each thread block to 64-byte cache line boundary
+        constexpr int64_t CACHE_LINE_PAD = 8; // 8 doubles = 64 bytes
+        const int64_t stride = n + CACHE_LINE_PAD;
+        std::vector<double> thread_dists(num_threads * stride, 0.0);
 
         #pragma omp parallel for schedule(dynamic, 16)
         for (int64_t i = 0; i < n; ++i) {
             int tid = omp_get_thread_num();
-            double* dists = &thread_dists[tid * n];
+            double* dists = &thread_dists[tid * stride];
             int64_t count = 0;
             
             const double* xi = points + i * d;
