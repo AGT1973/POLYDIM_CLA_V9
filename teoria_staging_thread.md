@@ -38,3 +38,9 @@
 - **Malloc Contention:** Validado el uso de Buffers Thread-Local pre-asignados en C++ y Rust fuera del bucle #pragma omp parallel for para evitar la serialización del heap de Windows (gcc 14.2 libgomp limitation).
 - **False Sharing:** Validado. El uso de arrays pre-mapeados (	hread_dists) mitiga el false sharing al mantener bloques de trabajo contiguos separados por 	id * stride.
 - **NaN Adversarial Attack:** Validada matemáticamente la violación de *Strict Weak Ordering* en std::sort causada por NaNs. std::isfinite antes de encolar es la mitigación (N)$ correcta para preservar asintótica.
+
+
+## Ingesta de Sabueso 903_3.md (Soluciones SOTA V903: ANN, CliffordNet & TLS NUMA)
+- **SOTA ANN (HNSW / FAISS IVF-PQ):** Para N > 10,000, los kd-trees degeneran a O(N^2 log N) en D > 20. Mandato V903: HNSW (M=32, efConstruction=256, efSearch=128) para N <= 50M (Recall > 97.5%, latencia < 4ms). FAISS IVF-PQ (nlist=8192, nprobe=80, m=64) para N > 50M. Tolerancia de sesgo Two-NN eps < 2%.
+- **CliffordNet 2026 & AVX-512 (_mm512_fnmadd_ps):** Reemplazo de matriz densa X^T X (O(DK^2)) por bi-vectores empaquetados K(K-1)/2 y Sparse Rolling Interaction (SRI, S=5 shifts). Reducción de ancho de banda de 1000 GB/s a 32 KB. Kernel SIMD AVX-512 FMA unrolled logrando 12x-15x speedup.
+- **TLS NUMA Pool & mimalloc:** Eliminación total de contención malloc en OpenMP libgomp mediante 	hread_local ThreadLocalPool alignas(64) + inicialización First-Touch dentro del parallel region. Fallback a mimalloc (eager_commit=1) para 1.75x speedup en Linux/Windows.

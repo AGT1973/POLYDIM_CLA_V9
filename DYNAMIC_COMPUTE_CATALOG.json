@@ -1,12 +1,12 @@
 {
-  "last_probe_timestamp": "2026-09-30 14:00:27",
+  "last_probe_timestamp": "2026-09-30 16:00:53",
   "providers": {
     "cerebras_wse": {
       "status": "ONLINE",
       "provider": "Cerebras Wafer-Scale (WSE)",
       "models": [
-        "qwen-3.8-27b",
-        "gpt-oss-120b"
+        "gpt-oss-120b",
+        "qwen-3.8-27b"
       ],
       "fastest_qwen": "qwen-3.8-27b",
       "fastest_reasoner": "gpt-oss-120b"
@@ -15,16 +15,16 @@
       "status": "ONLINE",
       "provider": "Groq LPU",
       "models": [
-        "allam-2-7b",
-        "qwen/qwen3.8-27b",
-        "openai/gpt-oss-20b",
-        "meta-llama/llama-prompt-guard-2-86m",
-        "canopylabs/orpheus-arabic-saudi",
-        "meta-llama/llama-prompt-guard-2-22m",
-        "whisper-large-v3",
-        "openai/gpt-oss-120b",
-        "openai/gpt-oss-safeguard-20b",
         "canopylabs/orpheus-v1-english",
+        "openai/gpt-oss-120b",
+        "qwen/qwen3.8-27b",
+        "canopylabs/orpheus-arabic-saudi",
+        "openai/gpt-oss-20b",
+        "allam-2-7b",
+        "whisper-large-v3",
+        "openai/gpt-oss-safeguard-20b",
+        "meta-llama/llama-prompt-guard-2-86m",
+        "meta-llama/llama-prompt-guard-2-22m",
         "whisper-large-v3-turbo"
       ],
       "sota_llama": null,
