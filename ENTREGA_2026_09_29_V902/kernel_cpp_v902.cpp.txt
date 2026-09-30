@@ -34,16 +34,17 @@
 // ============================================================================
 
 #pragma pack(push, 8)
-struct PolydimErrorV902 {
+struct alignas(64) PolydimErrorV902 {
     uint32_t code;
     char msg[256];
     uint64_t arena_id;
     uint64_t gen;
+    uint8_t _pad[40];
 };
 #pragma pack(pop)
 
-static_assert(sizeof(PolydimErrorV902) == 280, "ABI Mismatch: PolydimErrorV902 must be exactly 280 bytes");
-static_assert(alignof(PolydimErrorV902) == 8, "ABI Mismatch: PolydimErrorV902 must have 8-byte alignment");
+static_assert(sizeof(PolydimErrorV902) == 320, "ABI Mismatch: PolydimErrorV902 must be exactly 320 bytes");
+static_assert(alignof(PolydimErrorV902) == 64, "ABI Mismatch: PolydimErrorV902 must have 64-byte alignment");
 
 static inline void set_error_success(PolydimErrorV902* err) noexcept {
     if (err) {

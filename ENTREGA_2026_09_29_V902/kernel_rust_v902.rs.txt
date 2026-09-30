@@ -59,13 +59,14 @@ thread_local! {
     static LAST_ERR_STR: RefCell<CString> = RefCell::new(CString::new("").unwrap());
 }
 
-#[repr(C, align(8))]
+#[repr(C, align(64))]
 #[derive(Debug, Clone, Copy)]
 pub struct V902Error {
     pub code: u32,
     pub msg: [u8; 256],
     pub arena_id: u64,
     pub gen: u64,
+    pub _pad: [u8; 40],
 }
 
 impl V902Error {

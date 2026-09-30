@@ -363,6 +363,10 @@ def test_9_two_nn_baraniuk_wakin_feasibility():
     print(f"  Estimación Two-NN MLE (d_hat):  {d_mle:.2f}")
     print(f"  Cota Superior UCB 95%:          {d_ucb:.2f}")
 
+    if abs(d_mle - true_intrinsic_dim) >= 5.0:
+        print(f"❌ WATCHDOG BARANIUK-WAKIN TRIGGERED: Estimación Two-NN fuera de rango: {d_mle}. Colapsando pipeline.")
+        sys.exit(1)
+    
     require(abs(d_mle - true_intrinsic_dim) < 5.0, f"Estimación Two-NN fuera de rango: {d_mle}")
 
     # 2. Cota Baraniuk-Wakin con C=1.0 (canónica) — reporte honesto multi-epsilon

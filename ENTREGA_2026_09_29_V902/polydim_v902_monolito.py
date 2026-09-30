@@ -62,6 +62,7 @@ class PolydimErrorV902(ctypes.Structure):
         ("msg", ctypes.c_char * 256),
         ("arena_id", ctypes.c_uint64),
         ("gen", ctypes.c_uint64),
+        ("_pad", ctypes.c_uint8 * 40),
     ]
 
     def is_ok(self) -> bool:
