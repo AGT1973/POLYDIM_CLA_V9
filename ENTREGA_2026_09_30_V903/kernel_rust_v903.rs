@@ -294,7 +294,7 @@ pub extern "C" fn polydim_rust_riemannian_geodesic_v903(
         let norm_u = lassq_norm(u_slice);
         let norm_v = lassq_norm(v_slice);
 
-        if !norm_u.is_finite() || !norm_v.is_finite() || norm_u < 1e-15 || norm_v < 1e-15 {
+        if !norm_u.is_finite() || !norm_v.is_finite() || norm_u <= 0.0 || norm_v <= 0.0 {
             set_last_error("Degenerate or non-finite vector norm in geodesic");
             if !err.is_null() { unsafe { (*err).write_error(3, "Invalid vector norm"); } }
             return -3;
@@ -505,7 +505,126 @@ pub extern "C" fn polydim_rust_simplicial_homology_hodge_v903(
 }
 
 // ============================================================================
-// 5. ESTIMADOR Multi-K / Two-NN DE DIMENSIÓN INTRÍNSECA (Prior Gamma V903)
+// 5. QSBR SNAPSHOT COPY-OUT V903
+// ============================================================================
+
+#[no_mangle]
+pub extern "C" fn polydim_rust_qsbr_snapshot_copy_v903(
+    src: *const u8,
+    size_bytes: usize,
+    dst: *mut u8,
+    copied_bytes_out: *mut usize,
+    err: *mut V903Error,
+) -> c_int {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if src.is_null() || dst.is_null() || copied_bytes_out.is_null() {
+            set_last_error("Null pointers in qsbr_snapshot_copy");
+            if !err.is_null() { unsafe { (*err).write_error(1, "Null pointer"); } }
+            return -1;
+        }
+
+        if size_bytes > 0 {
+            unsafe {
+                std::ptr::copy_nonoverlapping(src, dst, size_bytes);
+            }
+        }
+        unsafe {
+            *copied_bytes_out = size_bytes;
+            if !err.is_null() { (*err).write_success(); }
+        }
+
+        0
+    }));
+
+    result.unwrap_or_else(|_| {
+        set_last_error("Panic caught in qsbr_snapshot_copy");
+        if !err.is_null() { unsafe { (*err).write_error(99, "Panic unwind caught"); } }
+        -99
+    })
+}
+
+// ============================================================================
+// 6. EVALUADOR DE DISTORSIÓN DE SECANTES EN VARIEDADES V903
+// ============================================================================
+
+#[no_mangle]
+pub extern "C" fn polydim_rust_secant_distortion_eval_v903(
+    num_pts: c_uint,
+    dim_in: c_uint,
+    dim_out: c_uint,
+    orig_pts_ptr: *const c_double,
+    proj_pts_ptr: *const c_double,
+    l_min_out: *mut c_double,
+    l_max_out: *mut c_double,
+    delta_max_out: *mut c_double,
+    secant_alpha_out: *mut c_double,
+    err: *mut V903Error,
+) -> c_int {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        if orig_pts_ptr.is_null() || proj_pts_ptr.is_null() || l_min_out.is_null() || l_max_out.is_null() || delta_max_out.is_null() || secant_alpha_out.is_null() {
+            set_last_error("Null pointers in secant_distortion_eval");
+            if !err.is_null() { unsafe { (*err).write_error(1, "Null pointer"); } }
+            return -1;
+        }
+
+        let n = num_pts as usize;
+        let din = dim_in as usize;
+        let dout = dim_out as usize;
+
+        if n < 2 || din == 0 || dout == 0 {
+            set_last_error("num_pts >= 2 and dims > 0 required");
+            if !err.is_null() { unsafe { (*err).write_error(2, "Invalid dimensions"); } }
+            return -2;
+        }
+
+        let orig_pts = unsafe { std::slice::from_raw_parts(orig_pts_ptr, n * din) };
+        let proj_pts = unsafe { std::slice::from_raw_parts(proj_pts_ptr, n * dout) };
+
+        let mut global_l_min = 1e30f64;
+        let mut global_l_max = 0.0f64;
+        let mut global_delta_max = 0.0f64;
+
+        for i in 0..n {
+            let xi = &orig_pts[i * din..(i + 1) * din];
+            let yi = &proj_pts[i * dout..(i + 1) * dout];
+
+            for j in (i + 1)..n {
+                let xj = &orig_pts[j * din..(j + 1) * din];
+                let yj = &proj_pts[j * dout..(j + 1) * dout];
+
+                let orig_dist = lassq_norm(&xi.iter().zip(xj.iter()).map(|(&a, &b)| a - b).collect::<Vec<_>>());
+                if orig_dist > 1e-12 {
+                    let proj_dist = lassq_norm(&yi.iter().zip(yj.iter()).map(|(&a, &b)| a - b).collect::<Vec<_>>());
+                    let ratio = proj_dist / orig_dist;
+
+                    if ratio < global_l_min { global_l_min = ratio; }
+                    if ratio > global_l_max { global_l_max = ratio; }
+                    let delta = (ratio - 1.0).abs();
+                    if delta > global_delta_max { global_delta_max = delta; }
+                }
+            }
+        }
+
+        unsafe {
+            *l_min_out = global_l_min;
+            *l_max_out = global_l_max;
+            *delta_max_out = global_delta_max;
+            *secant_alpha_out = global_l_min;
+            if !err.is_null() { (*err).write_success(); }
+        }
+
+        0
+    }));
+
+    result.unwrap_or_else(|_| {
+        set_last_error("Panic caught in secant_distortion_eval");
+        if !err.is_null() { unsafe { (*err).write_error(99, "Panic unwind caught"); } }
+        -99
+    })
+}
+
+// ============================================================================
+// 7. ESTIMADOR Multi-K / Two-NN DE DIMENSIÓN INTRÍNSECA (Prior Gamma V903)
 // ============================================================================
 
 #[no_mangle]
@@ -602,7 +721,7 @@ pub extern "C" fn polydim_rust_two_nn_intrinsic_dim_v903(
 }
 
 // ============================================================================
-// 6. COTA BARANIUK–WAKIN Y FACTIBILIDAD DE PROYECCIÓN V903
+// 8. COTA BARANIUK–WAKIN Y FACTIBILIDAD DE PROYECCIÓN V903
 // ============================================================================
 
 #[no_mangle]
@@ -665,7 +784,7 @@ pub extern "C" fn polydim_rust_baraniuk_wakin_feasibility_v903(
 }
 
 // ============================================================================
-// 7. CLIFFORDNET 2026: INTERACCIÓN BIVECTORIAL Y SRI V903
+// 9. CLIFFORDNET 2026: INTERACCIÓN BIVECTORIAL Y SRI V903
 // ============================================================================
 
 #[no_mangle]
@@ -734,7 +853,7 @@ pub extern "C" fn polydim_rust_cliffordnet_bivector_interact_v903(
 }
 
 // ============================================================================
-// 8. ITERACIÓN POLAR GRAM NEWTON–SCHULZ (Schedule [2, 3, 2] V903)
+// 10. ITERACIÓN POLAR GRAM NEWTON–SCHULZ (Schedule [2, 3, 2] V903)
 // ============================================================================
 
 #[no_mangle]
@@ -866,7 +985,7 @@ pub extern "C" fn polydim_rust_hybrid_auon_orthogonalization_v903(
 }
 
 // ============================================================================
-// 9. MÉTRICA FIRE (Frobenius-Isometry Reinitialization) V903
+// 11. MÉTRICA FIRE (Frobenius-Isometry Reinitialization) V903
 // ============================================================================
 
 #[no_mangle]
@@ -890,7 +1009,7 @@ pub extern "C" fn polydim_rust_fire_metric_v903(
         let k = rank_k as usize;
 
         if d == 0 || k == 0 || k > d {
-            set_error_msg("Invalid dimensions for FIRE metric");
+            set_last_error("Invalid dimensions for FIRE metric");
             if !err.is_null() { unsafe { (*err).write_error(2, "Invalid dimensions"); } }
             return -2;
         }

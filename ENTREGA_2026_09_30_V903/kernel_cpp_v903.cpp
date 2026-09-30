@@ -246,7 +246,7 @@ POLYDIM_EXPORT int polydim_cpp_riemannian_geodesic_v903(
         double norm_u = lassq_norm_cpp(u, d);
         double norm_v = lassq_norm_cpp(v, d);
 
-        if (!std::isfinite(norm_u) || !std::isfinite(norm_v) || norm_u < 1e-15 || norm_v < 1e-15) {
+        if (!std::isfinite(norm_u) || !std::isfinite(norm_v) || norm_u <= 0.0 || norm_v <= 0.0) {
             set_error_msg(err, 3, "Degenerate or non-finite vector norm");
             return -3;
         }
