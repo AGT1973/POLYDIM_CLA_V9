@@ -592,21 +592,14 @@ pub extern "C" fn polydim_rust_two_nn_intrinsic_dim_v902(
         let n_valid = mu_values.len() as f64;
         let sum_log_mu: f64 = mu_values.iter().map(|&mu| mu.ln()).sum();
 
-        if sum_log_mu <= 1e-12 || !sum_log_mu.is_finite() {
-            unsafe {
-                *d_intrinsic_mle_out = 1.0;
-                *d_intrinsic_ucb_out = 1.0;
-                if !err.is_null() { (*err).write_success(); }
-            }
-            return 0;
-        }
-
-        // Estimador MLE insesgado: d = (N - 1) / sum(ln(mu))
-        let d_mle = (n_valid - 1.0) / sum_log_mu;
-        let d_ucb = d_mle * (1.0 + 1.96 / n_valid.sqrt());
+        // Estimador Bayesiano MAP (Prior Gamma)
+        let alpha = 2.0;
+        let beta = 1e-3;
+        let d_map = (n_valid + alpha - 1.0) / (sum_log_mu + beta);
+        let d_ucb = d_map * (1.0 + 1.96 / n_valid.sqrt());
 
         unsafe {
-            *d_intrinsic_mle_out = d_mle;
+            *d_intrinsic_mle_out = d_map;
             *d_intrinsic_ucb_out = d_ucb;
             if !err.is_null() { (*err).write_success(); }
         }

@@ -365,18 +365,17 @@ POLYDIM_EXPORT int polydim_cpp_two_nn_intrinsic_dim_v902(
             return -3;
         }
 
-        if (sum_log_mu <= 1e-12 || !std::isfinite(sum_log_mu)) {
-            *d_intrinsic_mle_out = 1.0;
-            *d_intrinsic_ucb_out = 1.0;
-            set_error_success(err);
-            return 0;
-        }
+        // Estimador Bayesiano MAP (Prior Gamma)
+        // Sustituye el parche sum_log_mu <= 1e-12 y evita colapso por división por cero.
+        double alpha = 2.0;
+        double beta = 1e-3;
+        double d_map = static_cast<double>(n_valid) + alpha - 1.0;
+        d_map /= (sum_log_mu + beta);
+        
+        // La cota de confianza (UCB) ajustada alrededor del MAP
+        double d_ucb = d_map * (1.0 + 1.96 / std::sqrt(static_cast<double>(n_valid)));
 
-        // Estimador MLE insesgado: d = (N - 1) / sum(ln(mu))
-        double d_mle = static_cast<double>(n_valid - 1) / sum_log_mu;
-        double d_ucb = d_mle * (1.0 + 1.96 / std::sqrt(static_cast<double>(n_valid)));
-
-        *d_intrinsic_mle_out = d_mle;
+        *d_intrinsic_mle_out = d_map;
         *d_intrinsic_ucb_out = d_ucb;
 
         set_error_success(err);
@@ -762,47 +761,29 @@ POLYDIM_EXPORT int polydim_cpp_stiefel_cayley_smw_retraction_v902(
 
         int64_t n_sys = 2 * k;
 
-        // 1. Calcular bloques KxK: A = X^T G, B = X^T X, C = G^T G (Sin sección crítica OpenMP)
-        int num_threads = omp_get_max_threads();
-        std::vector<double> thread_a(num_threads * k * k, 0.0);
-        std::vector<double> thread_b(num_threads * k * k, 0.0);
-        std::vector<double> thread_c(num_threads * k * k, 0.0);
+        // 1. Calcular bloques KxK: A = X^T G, B = X^T X, C = G^T G (Reducción Nativa OpenMP 5.0)
+        int64_t k_sq = k * k;
+        
+        std::vector<double> mat_a(k_sq, 0.0);
+        std::vector<double> mat_b(k_sq, 0.0);
+        std::vector<double> mat_c(k_sq, 0.0);
+        
+        double* ptr_a = mat_a.data();
+        double* ptr_b = mat_b.data();
+        double* ptr_c = mat_c.data();
 
-        #pragma omp parallel
-        {
-            int tid = omp_get_thread_num();
-            double* la = &thread_a[tid * k * k];
-            double* lb = &thread_b[tid * k * k];
-            double* lc = &thread_c[tid * k * k];
-
-            #pragma omp for schedule(static)
-            for (int64_t row = 0; row < d; ++row) {
-                const double* xr = x_ptr + row * k;
-                const double* gr = g_ptr + row * k;
-                for (int64_t i = 0; i < k; ++i) {
-                    double xi = xr[i];
-                    double gi = gr[i];
-                    for (int64_t j = 0; j < k; ++j) {
-                        la[i * k + j] += xi * gr[j];
-                        lb[i * k + j] += xi * xr[j];
-                        lc[i * k + j] += gi * gr[j];
-                    }
+        #pragma omp parallel for schedule(static) reduction(+:ptr_a[0:k_sq], ptr_b[0:k_sq], ptr_c[0:k_sq])
+        for (int64_t row = 0; row < d; ++row) {
+            const double* xr = x_ptr + row * k;
+            const double* gr = g_ptr + row * k;
+            for (int64_t i = 0; i < k; ++i) {
+                double xi = xr[i];
+                double gi = gr[i];
+                for (int64_t j = 0; j < k; ++j) {
+                    ptr_a[i * k + j] += xi * gr[j];
+                    ptr_b[i * k + j] += xi * xr[j];
+                    ptr_c[i * k + j] += gi * gr[j];
                 }
-            }
-        }
-
-        std::vector<double> mat_a(k * k, 0.0);
-        std::vector<double> mat_b(k * k, 0.0);
-        std::vector<double> mat_c(k * k, 0.0);
-
-        for (int t = 0; t < num_threads; ++t) {
-            const double* la = &thread_a[t * k * k];
-            const double* lb = &thread_b[t * k * k];
-            const double* lc = &thread_c[t * k * k];
-            for (int64_t idx = 0; idx < k * k; ++idx) {
-                mat_a[idx] += la[idx];
-                mat_b[idx] += lb[idx];
-                mat_c[idx] += lc[idx];
             }
         }
 
@@ -870,19 +851,16 @@ POLYDIM_EXPORT int polydim_cpp_stiefel_cayley_smw_retraction_v902(
         }
 
         // 7. Computar error de ortonormalidad de salida: ||Y^T Y - I_K||_F / sqrt(K)
-        std::vector<double> thread_yty(num_threads * k * k, 0.0);
-        #pragma omp parallel
-        {
-            int tid = omp_get_thread_num();
-            double* lyty = &thread_yty[tid * k * k];
-            #pragma omp for schedule(static)
-            for (int64_t row = 0; row < d; ++row) {
-                const double* yr = y_out + row * k;
-                for (int64_t i = 0; i < k; ++i) {
-                    double yi = yr[i];
-                    for (int64_t j = 0; j < k; ++j) {
-                        lyty[i * k + j] += yi * yr[j];
-                    }
+        std::vector<double> yty(k * k, 0.0);
+        double* ptr_yty = yty.data();
+        
+        #pragma omp parallel for schedule(static) reduction(+:ptr_yty[0:k_sq])
+        for (int64_t row = 0; row < d; ++row) {
+            const double* yr = y_out + row * k;
+            for (int64_t i = 0; i < k; ++i) {
+                double yi = yr[i];
+                for (int64_t j = 0; j < k; ++j) {
+                    ptr_yty[i * k + j] += yi * yr[j];
                 }
             }
         }

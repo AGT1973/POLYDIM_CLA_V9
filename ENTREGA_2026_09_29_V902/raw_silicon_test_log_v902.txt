@@ -39,7 +39,7 @@
 ================================================================================
 ▶ TEST 6: Concurrencia QSBR con Escritor Activo y Verificación Anti-Torn-Reads
 ================================================================================
-  Copia concurrente de 64 KB realizada en 40.70 µs mientras el escritor avanzó a gen 2
+  Copia concurrente de 64 KB realizada en 41.10 µs mientras el escritor avanzó a gen 1
   ✅ TEST 6 PASSED: QSBR Copy-out garantiza aislamiento sin retener punteros a memoria compartida.
 
 ================================================================================
@@ -54,26 +54,26 @@
 ▶ TEST 8: Benchmark Calibrado de Rendimiento de Memoria en Silicio Físico
 ================================================================================
   Carga útil transferida: 8.0 MB (8,388,608 bytes)
-  Latencia de Memoria:    Mediana = 2884.15 µs | p95 = 12908.07 µs
-  Ancho de Banda Medido:  2.91 GB/s (Techo teórico DDR3 Dual-Channel: 25.6 GB/s)
+  Latencia de Memoria:    Mediana = 4927.40 µs | p95 = 22294.56 µs
+  Ancho de Banda Medido:  1.70 GB/s (Techo teórico DDR3 Dual-Channel: 25.6 GB/s)
   ✅ TEST 8 PASSED: Rendimiento de transferencia validado dentro de los límites físicos del silicio.
 
 ================================================================================
 ▶ TEST 9: Estimación de Dimensión Intrínseca Two-NN & Cota Formal de Baraniuk–Wakin (3072 -> 1536)
 ================================================================================
   Dimensión Intrínseca Real:      12
-  Estimación Two-NN MLE (d_hat):  10.12
-  Cota Superior UCB 95%:          11.52
+  Estimación Two-NN MLE (d_hat):  10.22
+  Cota Superior UCB 95%:          11.64
 
-  --- Tabla de Factibilidad Baraniuk-Wakin (C=1.0, d_ucb=11.52) ---
+  --- Tabla de Factibilidad Baraniuk-Wakin (C=1.0, d_ucb=11.64) ---
      eps |      m_req |  m_out | factible
   -------+------------+--------+---------
-    0.10 |     5636.2 |   1536 |       NO
-    0.15 |     2297.3 |   1536 |       NO
-    0.20 |     1209.4 |   1536 |       SI
-    0.30 |      485.6 |   1536 |       SI
-    0.40 |      252.4 |   1536 |       SI
-    0.50 |      151.3 |   1536 |       SI
+    0.10 |     5670.7 |   1536 |       NO
+    0.15 |     2310.6 |   1536 |       NO
+    0.20 |     1216.0 |   1536 |       SI
+    0.30 |      488.0 |   1536 |       SI
+    0.40 |      253.6 |   1536 |       SI
+    0.50 |      151.9 |   1536 |       SI
 
   NOTA: Con C=1.0 (canónica), eps=0.15 NO satisface BW. La evidencia
         de preservación empírica es TEST 1 (distorsión de secantes medida).
@@ -115,5 +115,5 @@
   ✅ TEST 12 PASSED: Cota Riemanniana de Higham validada en silicio para D=1,000,000.
 
 ================================================================================
-📋 RESUMEN DE EJECUCIÓN FÍSICA: 12/12 PRUEBAS EXITOSAS (Exit Code 0) en 5.33s
+📋 RESUMEN DE EJECUCIÓN FÍSICA: 12/12 PRUEBAS EXITOSAS (Exit Code 0) en 6.44s
 ================================================================================
