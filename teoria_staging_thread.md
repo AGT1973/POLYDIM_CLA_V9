@@ -94,3 +94,48 @@ ew dentro del bucle mediante Scratch Buffers pre-asignados fuera de la región p
   - **Invariante Protegida via 
 equire() / Excepciones Explícitas:** Inmune a flags -O, garantizando la ejecución de validaciones matemáticas en cualquier modo de compilación.
   - **Manejadores de Señales Nativa & Telemetría OS:** Captura de SIGSEGV, SIGFPU, SIGABRT en la capa FFI C++/Rust para retornar exit codes distintos de cero y volcados de stacktrace asépticos.
+
+
+# Hilo de Ingesta Teórica de Staging (904_F.md SOTA Auditoría Extendida V905)
+> **Fecha de Ingesta:** 2026-09-30
+> **Estado:** Ingerido a SQLite POLYDIM_VECDB.sqlite (tabla udit_ingestion_vault, source 904_F.md) bajo Regla 19.
+
+---
+
+## 1. HNSW Generacional & Snapshots Zero-Copy para Escalabilidad  > 10^7$
+- **Cuello de Botella:** La sustitución directa de mutexes por instrucciones atómicas CAS (std::atomic<uint32_t>) en la inserción incremental de HNSW genera una tormenta de escrituras en la caché L1/L2 sobre nodos concentradores (hubs), causando invalidación masiva de líneas de caché y degradando la inserción concurrente.
+- **Solución SOTA V905:**
+  - **Construcción en Lotes Generacionales (Generational Batch-Parallel Builder):** Desacoplar la fase de búsqueda k-NN de la fase de enlazado de aristas. Los candidatos se recolectan en paralelo y las aristas se actualizan en masa por niveles.
+  - **Layout Contiguo & Publicación por Versión (RCU / Seqlock):** Mantenimiento de snapshots inmutables para lecturas concurrentes sin bloqueo via mmap, publicando la nueva versión del grafo atómicamente mediante un puntero de versión global.
+  - **Índices de 32 Bits & Padding Cache-Line (64 Bytes):** Indexación comprimida a 32 bits para duplicar la densidad en la caché L2 y eliminar el False Sharing entre hilos.
+
+---
+
+## 2. Reducción Simplicial GF(2) Bitpacked & Umbrales Dinámicos OpenMP
+- **Cuello de Botella:** El paralelismo OpenMP en la eliminación Gaussiana sobre GF(2) introduce un overhead de sincronización superior a la ejecución secuencial cuando la matriz de borde posee pocas columnas ( < 16$ palabras de 64 bits).
+- **Solución SOTA V905:**
+  - **Cláusula de Umbral Calibrado OpenMP:** Inyección de #pragma omp parallel for if(rows * cols > 4096) para activar el paralelismo multihilo únicamente cuando el volumen de trabajo supere el costo de fork-join.
+  - **Bitpacking SIMD Vectorizado:** Operaciones XOR vectorizadas sobre palabras uint64_t utilizando registros AVX-256 (_mm256_xor_si256) o SSE (_mm_xor_si128), alcanzando una aceleración de 	imes$ frente a manipulaciones a nivel de bit.
+
+---
+
+## 3. Estabilización FPU contra Underflow: Suma Compensada Kahan & Log-Sum-Exp por Bloques
+- **Brecha / Bug:** En matrices con disparidad extrema de magnitudes ($|x_i| \in [10^{-300}, 10^{300}]$), la suma simple de cuadrados en la norma RMS / AuON genera bajo flujo flotante (underflow) o pérdida de dígitos significativos al acumular términos pequeños en sumas parciales.
+- **Solución SOTA V905:**
+  - **Suma Compensada Kahan-Babuška-Neumaier (KBN):** Mantenimiento de un acumulador de error de compensación $ por hilo en las reducciones de OpenMP, manteniendo el error acumulado dentro de (\epsilon_{	ext{FP64}})$.
+  - **Escalado Log-Sum-Exp por Bloques:** Extracción previa del término de magnitud máxima $\|X\|_\infty$ en bloques de memoria local antes de evaluar las exponenciales en el freno AuON.
+
+---
+
+## 4. Retracción Cayley-Stiefel Matrix-Free para Rangos  > 32$
+- **Cuello de Botella:** La resolución de sistemas lineales  	imes 2K$ en la retracción Cayley-Stiefel mediante eliminación Gaussiana estándar (K^3)$ no vectorizada se convierte en el cuello de botella dominante para  > 32$.
+- **Solución SOTA V905:**
+  - **Factorización LU por Bloques SIMD Vectorizada / Sherman-Morrison Rank-2 Updates:** Descomposición matricial en sub-bloques alineados a registros vectoriales y actualizaciones de rango reducido para evitar la resolución densa (K^3)$.
+
+---
+
+## 5. Representación Dispersa de Hojas de Clifford (Sparse Clifford Blade Representation) para  \ge 32$
+- **Brecha:** La representación multivectorial densa en álgebras de Clifford sufre de una explosión de memoria exponencial (2^D)$ cuando se incorporan grados superiores (Grados 3, 4, etc.) para  \ge 32$.
+- **Solución SOTA V905:**
+  - **Indexación por Máscaras de Hoja (Sparse Blade Indexing):** Almacenamiento exclusivo de coeficientes multivectoriales no nulos asociados a máscaras de bits uint32_t blade_mask, manteniendo un consumo de memoria lineal con respecto a los grados activos.
+

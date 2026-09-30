@@ -1,0 +1,64 @@
+Timestamp: 2026-09-30 19:22:58
+OS: win32
+Python: 3.14.6 (tags/v3.14.6:c63aec6, Jun 10 2026, 10:26:10) [MSC v.1944 64 bit (AMD64)]
+
+--- STEP 1: Compiling C++20 Kernel V905 (MinGW GCC 14) ---
+Command: E:\winlibs_gcc14_zip\mingw64\bin\g++.exe -O3 -std=c++20 -fopenmp -mavx -msse4.2 -shared E:\POLYDIM_EINSOF\ENTREGA_2026_09_30_V905\kernel_cpp_v905.cpp -o E:\POLYDIM_EINSOF\ENTREGA_2026_09_30_V905\polydim_cpp_v905.dll
+C++ DLL compiled successfully: 84377 bytes.
+
+--- STEP 2: Compiling Rust Kernel V905 (Rustc 1.98.1) ---
+Command: C:\Users\eluithi\.cargo\bin\rustc.exe --crate-type cdylib -C opt-level=3 -C panic=unwind E:\POLYDIM_EINSOF\ENTREGA_2026_09_30_V905\kernel_rust_v905.rs -o E:\POLYDIM_EINSOF\ENTREGA_2026_09_30_V905\polydim_rust_v905.dll
+Rust DLL compiled successfully: 141312 bytes.
+
+--- STEP 3: Running Physical Silicon Unit Test Suite (12/12) ---
+======================================================================
+      POLYDIM V905 PHYSICAL SILICON COMPREHENSIVE SUITE (12/12)
+======================================================================
+[TEST 1/12] AuON Log-Cosh Brake...
+  -> PASS: Log-cosh loss and grad matched.
+[TEST 2/12] AuON Kahan Compensated RMS Normalize...
+  -> PASS: Kahan compensated RMS = 1.000000e+00
+[TEST 3/12] Riemannian Geodesic Metric on S^(D-1)...
+  -> PASS: Orthogonal vector distance exact pi/2.
+[TEST 4/12] CliffordNet SIMD 4x Unrolled Bivector Interaction...
+  -> PASS: SIMD 4x unrolled bivector energy = 1.003527
+[TEST 5/12] GF(2) Bitpacked Reduction with Dynamic Threshold...
+  -> PASS: GF(2) matrix rank = 2
+[TEST 6/12] Stiefel Cayley-SMW Matrix-Free Retraction...
+  -> PASS: Retracted Y orthogonality error = 2.09869281e-16
+[TEST 7/12] FIRE Spectral Metric...
+  -> PASS: Spectral drift = 3.4188853859e-16, Reinit needed = 0
+[TEST 8/12] Native Windows SharedMemory PMTP Transport...
+  -> PASS: Native Windows PMTP SharedMemory zero-copy verified.
+[TEST 9/12] Generational Batch HNSW Graph Builder...
+  -> PASS: Generational HNSW batch inserted 20 nodes, version=1
+[TEST 10/12] Sparse Clifford Blade Representation for D >= 32...
+  -> PASS: Sparse Clifford Blade geometric product 2.0 e_1 ^ 3.0 e_2 = 6.0 e_12.
+[TEST 11/12] Rust FFI Bridge V905...
+  -> PASS: Rust FFI V905 bridge operational.
+[TEST 12/12] Invariant Protection Guard Safety...
+  -> PASS: require() invariant guard active and immune to -O.
+======================================================================
+     ALL 12/12 PHYSICAL SILICON TESTS PASSED WITH EXIT CODE 0
+======================================================================
+
+
+--- STEP 4: Running Red Team Fuzzing Hounds (3/3) ---
+======================================================================
+      POLYDIM V905 RED TEAM ADVERSARIAL FUZZING HOUNDS (3/3)
+======================================================================
+[SABUESO 1/3] Extreme FPU Magnitude Attack (10^-300 to 10^300)...
+  -> SABUESO 1 PASS: FPU Hardening & Kahan Summation confirmed resistant.
+[SABUESO 2/3] PMTP SharedMemory & FFI Overlap Attack...
+  -> SABUESO 2 PASS: PMTP SharedMemory boundary checks confirmed.
+[SABUESO 3/3] Simplicial & Matrix Degeneracy Attack...
+  -> SABUESO 3 PASS: Matrix & Graph Degeneracy handling confirmed.
+======================================================================
+     ALL 3 RED TEAM FUZZING HOUNDS PASSED WITH EXIT CODE 0
+======================================================================
+
+
+======================================================================
+     FULL V905 SILICON CERTIFICATION PASSED 100% IN 41.32s
+     EXIT CODE 0 CERTIFIED ON AMD A4-6300 SILICON FLOOR
+======================================================================
