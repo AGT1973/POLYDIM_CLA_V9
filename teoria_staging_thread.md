@@ -27,3 +27,8 @@
    - Si $\beta=10^{-3}$ del estimador MAP Bayesiano se satura en distribuciones ultra-cuantizadas, se requerirá dar el salto al estimador K-NN dinámico (desempate midiendo la hipersfera del vecino $k=3,4\dots$).
 4. **Vulnerabilidad a Arrays en Reducción OpenMP 5.0:**
    - La reducción manual en C++ sigue existiendo; se pospuso el uso de `#pragma omp parallel for reduction(+:matrix[:K*K])` hasta que certifiquemos que GCC 14.2 compila dinámicamente sobre Heap (std::vector pointer) sin corromper la memoria transaccional.
+
+## Ingesta de Sabuesos 2 a 5 (V902 -> V903)
+- **BR-004/006 (L2 Overflow):** Validado. El kernel C++ ya implementaba un esquema seguro de FMA Isolation/Scaling en el bucle principal. Resistente a hiper-cuantización y escalares FP64.
+- **BR-002 (Fail-Fast JL):** Python tests refactorizados a os._exit(1) para bypass de handlers y evitar deadlock en pipelines distribuidos.
+- **FIRE (ICLR 2026):** Validado como necesidad crítica para nodos ML. Requiere instrumentación en V903 para evitar plasticity death en Retracciones Stiefel.

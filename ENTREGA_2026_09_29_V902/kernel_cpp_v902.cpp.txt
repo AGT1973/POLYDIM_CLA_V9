@@ -318,12 +318,16 @@ POLYDIM_EXPORT int polydim_cpp_two_nn_intrinsic_dim_v902(
         std::vector<double> mu_values(n, 0.0);
         std::vector<int> valid_flags(n, 0);
 
+        int num_threads = omp_get_max_threads();
+        std::vector<double> thread_dists(num_threads * n, 0.0);
+
         #pragma omp parallel for schedule(dynamic, 16)
         for (int64_t i = 0; i < n; ++i) {
+            int tid = omp_get_thread_num();
+            double* dists = &thread_dists[tid * n];
+            int64_t count = 0;
+            
             const double* xi = points + i * d;
-            double d1 = 1e30;
-            double d2 = 1e30;
-
             for (int64_t j = 0; j < n; ++j) {
                 if (i == j) continue;
                 const double* xj = points + j * d;
@@ -332,19 +336,24 @@ POLYDIM_EXPORT int polydim_cpp_two_nn_intrinsic_dim_v902(
                     double diff = xi[k] - xj[k];
                     dist_sq += diff * diff;
                 }
-                double dist = std::sqrt(dist_sq);
-
-                if (dist < d1) {
-                    d2 = d1;
-                    d1 = dist;
-                } else if (dist < d2) {
-                    d2 = dist;
+                if (std::isfinite(dist_sq)) {
+                    dists[count++] = std::sqrt(dist_sq);
                 }
             }
 
-            if (d1 > 1e-15 && std::isfinite(d2) && d2 >= d1) {
+            std::sort(dists, dists + count);
+
+            int64_t k_used = 0;
+            while (k_used < count && dists[k_used] <= 1e-12) {
+                k_used++;
+            }
+
+            if (k_used + 1 < count) {
+                double d1 = dists[k_used];
+                double d2 = dists[k_used + 1];
                 double mu = d2 / d1;
-                if (std::isfinite(mu) && mu > 1.0 + 1e-12) {
+                
+                if (std::isfinite(mu) && mu >= 1.0) {
                     mu_values[i] = mu;
                     valid_flags[i] = 1;
                 }
@@ -865,13 +874,6 @@ POLYDIM_EXPORT int polydim_cpp_stiefel_cayley_smw_retraction_v902(
             }
         }
 
-        std::vector<double> yty(k * k, 0.0);
-        for (int t = 0; t < num_threads; ++t) {
-            const double* lyty = &thread_yty[t * k * k];
-            for (int64_t idx = 0; idx < k * k; ++idx) {
-                yty[idx] += lyty[idx];
-            }
-        }
 
         double frob_sq = 0.0;
         for (int64_t i = 0; i < k; ++i) {

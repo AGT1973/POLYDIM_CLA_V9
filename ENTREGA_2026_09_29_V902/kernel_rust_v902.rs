@@ -554,8 +554,7 @@ pub extern "C" fn polydim_rust_two_nn_intrinsic_dim_v902(
 
         for i in 0..n {
             let xi = &pts[i * d..(i + 1) * d];
-            let mut d1 = f64::INFINITY;
-            let mut d2 = f64::INFINITY;
+            let mut dists = Vec::with_capacity(n - 1);
 
             for j in 0..n {
                 if i == j { continue; }
@@ -565,19 +564,24 @@ pub extern "C" fn polydim_rust_two_nn_intrinsic_dim_v902(
                     let diff = xi[k] - xj[k];
                     dist_sq += diff * diff;
                 }
-                let dist = dist_sq.sqrt();
-
-                if dist < d1 {
-                    d2 = d1;
-                    d1 = dist;
-                } else if dist < d2 {
-                    d2 = dist;
+                if dist_sq.is_finite() {
+                    dists.push(dist_sq.sqrt());
                 }
             }
 
-            if d1 > 1e-15 && d2.is_finite() && d2 >= d1 {
+            dists.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+            let mut k_used = 0;
+            while k_used < dists.len() && dists[k_used] <= 1e-12 {
+                k_used += 1;
+            }
+
+            if k_used + 1 < dists.len() {
+                let d1 = dists[k_used];
+                let d2 = dists[k_used + 1];
                 let mu = d2 / d1;
-                if mu.is_finite() && mu > 1.0 + 1e-12 {
+                
+                if mu.is_finite() && mu >= 1.0 {
                     mu_values.push(mu);
                 }
             }

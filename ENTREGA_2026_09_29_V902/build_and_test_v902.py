@@ -25,7 +25,7 @@ print("Running C++ compilation:", " ".join(cmd_cpp))
 res_cpp = subprocess.run(cmd_cpp, capture_output=True, text=True)
 if res_cpp.returncode != 0:
     print("C++ Compilation Error:", res_cpp.stderr)
-    sys.exit(1)
+    os._exit(1)
 print(f"Compiled C++ DLL: {cpp_dll} ({os.path.getsize(cpp_dll)} bytes)")
 
 # 3. Compile Rust DLL with Rustc
@@ -36,7 +36,7 @@ print("Running Rust compilation:", " ".join(cmd_rust))
 res_rust = subprocess.run(cmd_rust, capture_output=True, text=True)
 if res_rust.returncode != 0:
     print("Rust Compilation Error:", res_rust.stderr)
-    sys.exit(1)
+    os._exit(1)
 print(f"Compiled Rust DLL: {rust_dll} ({os.path.getsize(rust_dll)} bytes)")
 
 # Copy DLLs to auditoria_externa
