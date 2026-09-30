@@ -1,0 +1,57 @@
+{
+  "device": "cuda",
+  "gpu_name": "Tesla T4",
+  "gpu_count": 2,
+  "benchmarks": [
+    {
+      "name": "Rodrigues_GPU_FP64",
+      "D": 10000,
+      "latency_ms": 23.92101499998489,
+      "norm_drift": 1.1102230246251565e-16,
+      "bandwidth_gbs": 0.013377358778471654
+    },
+    {
+      "name": "Rodrigues_GPU_FP64",
+      "D": 100000,
+      "latency_ms": 0.21794399998498193,
+      "norm_drift": 0.0,
+      "bandwidth_gbs": 14.682670778826237
+    },
+    {
+      "name": "Rodrigues_GPU_FP64",
+      "D": 1000000,
+      "latency_ms": 0.5534210000064377,
+      "norm_drift": 0.0,
+      "bandwidth_gbs": 57.82216431907673
+    },
+    {
+      "name": "Rodrigues_GPU_FP64",
+      "D": 10000000,
+      "latency_ms": 4.537416999994548,
+      "norm_drift": 0.0,
+      "bandwidth_gbs": 70.52470601674575
+    },
+    {
+      "name": "CholQR2_GPU_FP64",
+      "D": 65536,
+      "K": 16,
+      "latency_ms": 244.843397000011,
+      "ortho_error": 4.440892098500626e-16
+    },
+    {
+      "name": "CholQR2_GPU_FP64",
+      "D": 65536,
+      "K": 32,
+      "latency_ms": 21.323510999991413,
+      "ortho_error": 4.440892098500626e-16
+    },
+    {
+      "name": "CholQR2_GPU_FP64",
+      "D": 65536,
+      "K": 64,
+      "latency_ms": 90.62142300001597,
+      "ortho_error": 7.771561172376096e-16
+    }
+  ],
+  "subnormal_val": 1.0005271035279194e-42
+}

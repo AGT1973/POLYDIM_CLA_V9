@@ -326,8 +326,12 @@ pub extern "C" fn polydim_rust_riemannian_geodesic_v900(
         }
 
         dot = dot.clamp(-1.0, 1.0);
-        let angular_dist = dot.acos();
         let chordal_dist = chordal_sq.sqrt();
+        let angular_dist = if dot > 0.9999 {
+            2.0 * (chordal_dist * 0.5).asin()
+        } else {
+            dot.acos()
+        };
 
         unsafe {
             *angular_dist_out = angular_dist;
@@ -555,9 +559,12 @@ pub extern "C" fn polydim_rust_two_nn_intrinsic_dim_v900(
             for j in 0..n {
                 if i == j { continue; }
                 let xj = &pts[j * d..(j + 1) * d];
-                let mut diff_vec = vec![0.0f64; d];
-                for k in 0..d { diff_vec[k] = xi[k] - xj[k]; }
-                let dist = lassq_norm(&diff_vec);
+                let mut dist_sq = 0.0f64;
+                for k in 0..d {
+                    let diff = xi[k] - xj[k];
+                    dist_sq += diff * diff;
+                }
+                let dist = dist_sq.sqrt();
 
                 if dist < d1 {
                     d2 = d1;

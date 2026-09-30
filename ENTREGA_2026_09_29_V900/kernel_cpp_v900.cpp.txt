@@ -266,8 +266,13 @@ POLYDIM_EXPORT int polydim_cpp_riemannian_geodesic_v900(
         }
 
         dot = std::clamp(dot, -1.0, 1.0);
-        double angle = std::acos(dot);
         double chord = std::sqrt(chordal_sq);
+        double angle;
+        if (dot > 0.9999) {
+            angle = 2.0 * std::asin(chord * 0.5);
+        } else {
+            angle = std::acos(dot);
+        }
 
         *angular_dist_out = angle;
         *chordal_dist_out = chord;

@@ -1,0 +1,103 @@
+
+================================================================================
+🧪 INICIANDO SUITE DE PRUEBAS FÍSICAS Y ASINTÓTICAS POLYDIM V900 (12/12)
+================================================================================
+
+================================================================================
+▶ TEST 1: Secant RIP & Control de Variedad Efectiva M_A (3072 -> 1536)
+================================================================================
+  [Rust] L_min = 0.6703, L_max = 0.7437, Delta_max = 0.3297, alpha_K = 0.6703
+  [C++]  L_min = 0.6703, L_max = 0.7437, Delta_max = 0.3297, alpha_K = 0.6703
+  ✅ TEST 1 PASSED: Variedad M_A preservada bi-Lipschitz sin colapso a kernel nulo.
+
+================================================================================
+▶ TEST 2: Métrica Geodésica Riemanniana Cordal en S^(D-1) ante Ángulos Sub-Microscópicos
+================================================================================
+  Geodésica Identidad: 0.0e+00 rad | Opuestos: 3.141593 rad | Ortogonales: 1.570796 rad
+  ✅ TEST 2 PASSED: Métrica geodésica Riemanniana numéricamente incondicionada en S^(D-1).
+
+================================================================================
+▶ TEST 3: Homología Simplicial Exacta (1-Laplaciano de Hodge y Clausura Simplicial)
+================================================================================
+  Tetraedro 1-esqueleto (sin caras): Cycle Rank = 3, Betti-1 Simplicial = 3
+  Tetraedro con 3 caras rellenas:    Cycle Rank = 3, Betti-1 Simplicial = 0
+  Complejo simplicial con cavidad:   Cycle Rank = 5, Betti-1 Simplicial = 3
+  ✅ TEST 3 PASSED: Homología simplicial distingue rigurosamente entre 1-esqueleto y 2-símplices.
+
+================================================================================
+▶ TEST 4: Freno Espectral AuON log-cosh ante Estrés Numérico Extremo (|x| = 100,000)
+================================================================================
+  Residual extremo x=100,000 -> Pérdida L=449992.20, Gradiente dL/dx=4.5000 (Cota analítica = 4.5000)
+  ✅ TEST 4 PASSED: Freno AuON estabilizado asintóticamente sin overflow a +Inf ni NaNs.
+
+================================================================================
+▶ TEST 5: Cortafuegos FFI y Error Strings con Contrato de Copia Inmediata en Memoria Privada
+================================================================================
+  Error FFI capturado y copiado inmediatamente: 'Null pointers passed to auon_log_cosh_brake' (Código 1)
+  ✅ TEST 5 PASSED: Aislamiento thread_local y contrato de copia inmediata cumplidos sin UAF.
+
+================================================================================
+▶ TEST 6: Concurrencia QSBR con Escritor Activo y Verificación Anti-Torn-Reads
+================================================================================
+  Copia concurrente de 64 KB realizada en 43.10 µs mientras el escritor avanzó a gen 3
+  ✅ TEST 6 PASSED: QSBR Copy-out garantiza aislamiento sin retener punteros a memoria compartida.
+
+================================================================================
+▶ TEST 7: Demostración Empírica de Information Bottleneck & Aislamiento de Canal (SNR Proxy)
+================================================================================
+  I(Task; Z_latent) proxy = 2.9971 nats
+  I(Task; Z_text)   proxy = 1.3984 nats
+  Pérdida por Tokenización = 1.5988 nats (>= 0)
+  ✅ TEST 7 PASSED: Monotonía del SNR proxy de Shannon verificada.
+
+================================================================================
+▶ TEST 8: Benchmark Calibrado de Rendimiento de Memoria en Silicio Físico
+================================================================================
+  Carga útil transferida: 8.0 MB (8,388,608 bytes)
+  Latencia de Memoria:    Mediana = 3276.85 µs | p95 = 42309.98 µs
+  Ancho de Banda Medido:  2.56 GB/s (Techo teórico DDR3 Dual-Channel: 25.6 GB/s)
+  ✅ TEST 8 PASSED: Rendimiento de transferencia validado dentro de los límites físicos del silicio.
+
+================================================================================
+▶ TEST 9: Estimación de Dimensión Intrínseca Two-NN & Cota Formal de Baraniuk–Wakin (3072 -> 1536)
+================================================================================
+  Dimensión Intrínseca Real:      12
+  Estimación Two-NN MLE (d_hat):  10.12
+  Cota Superior UCB 95%:          11.52
+
+  --- Tabla de Factibilidad Baraniuk-Wakin (C=1.0, d_ucb=11.52) ---
+     eps |      m_req |  m_out | factible
+  -------+------------+--------+---------
+    0.10 |     5636.2 |   1536 |       NO
+    0.15 |     2297.3 |   1536 |       NO
+    0.20 |     1209.4 |   1536 |       SI
+    0.30 |      485.6 |   1536 |       SI
+    0.40 |      252.4 |   1536 |       SI
+    0.50 |      151.3 |   1536 |       SI
+
+  NOTA: Con C=1.0 (canónica), eps=0.15 NO satisface BW. La evidencia
+        de preservación empírica es TEST 1 (distorsión de secantes medida).
+  ✅ TEST 9 PASSED: Two-NN estimación correcta, cota BW reportada honestamente.
+
+================================================================================
+▶ TEST 10: Iteración Polar Gram Newton–Schulz con Reinicio q <= 2 & Normalización AuON
+================================================================================
+  Gram-NS Pasos Ejecutados: 13 (convergencia canónica de orden 5)
+  Error Espectral de Isometría ||Q^T Q - I||_2: 1.330332e-15
+  Valores Singulares: min(sigma) = 1.0000, max(sigma) = 1.0000
+  Convergencia Exitosa: True
+  Error contra Oráculo SVD Polar ||Q - U*V^T||_F / sqrt(n): 2.258904e-15
+  AuON Matrix RMS calculado: 646881.6488 | RMS salida normalizada: 0.0000
+Traceback (most recent call last):
+  File "E:\POLYDIM_EINSOF\ENTREGA_2026_09_29_V900\auditoria_externa\test_v900_comprehensive_suite.py", line 669, in <module>
+    run_all_tests()
+    ~~~~~~~~~~~~~^^
+  File "E:\POLYDIM_EINSOF\ENTREGA_2026_09_29_V900\auditoria_externa\test_v900_comprehensive_suite.py", line 658, in run_all_tests
+    test_10_gram_ns_polar_restart_and_auon_matrix()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "E:\POLYDIM_EINSOF\ENTREGA_2026_09_29_V900\auditoria_externa\test_v900_comprehensive_suite.py", line 445, in test_10_gram_ns_polar_restart_and_auon_matrix
+    require(abs(rms_norm - 1.0) < 0.2, f"Salida AuON no está normalizada a RMS unitario: {rms_norm}")
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\POLYDIM_EINSOF\ENTREGA_2026_09_29_V900\auditoria_externa\test_v900_comprehensive_suite.py", line 54, in require
+    raise RuntimeError(f"REQUIRE FAILED: {msg}")
+RuntimeError: REQUIRE FAILED: Salida AuON no está normalizada a RMS unitario: 7.740668940916927e-06

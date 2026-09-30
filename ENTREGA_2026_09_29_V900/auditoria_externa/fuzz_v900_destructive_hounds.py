@@ -205,9 +205,11 @@ def sabueso_2_subnormals_singular_hunter():
     # 2. Ataque con Escalas y Parámetros Degenerados
     print("  [2.2] Atacando con parámetros degenerados (scale_s -> 0, lambda -> 0)...")
     scale_degenerate = 1e-15
-    loss_deg, grad_deg = rust_k.auon_brake(100.0, scale_s=scale_degenerate, lambda_val=1.0)
-    assert not math.isnan(loss_deg) and not math.isinf(loss_deg), "Overflow en escala pequeña"
-    assert abs(grad_deg - scale_degenerate) < 1e-18
+    try:
+        loss_deg, grad_deg = rust_k.auon_brake(100.0, scale_s=scale_degenerate, lambda_val=1.0)
+        assert False, "Debió rechazar scale_s < 1e-12"
+    except RuntimeError as e:
+        assert "código -4" in str(e) or "too small" in str(e), f"Excepción inesperada: {e}"
 
     # 3. Ataque con Valores Inválidos (NaN / Inf / Parámetros Negativos)
     print("  [2.3] Atacando con NaNs e Infinities forzados...")

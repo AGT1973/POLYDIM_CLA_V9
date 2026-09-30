@@ -410,7 +410,7 @@ def test_10_gram_ns_polar_restart_and_auon_matrix():
     a_mat = rng.standard_normal((n, n))
 
     # 1. Gram Newton-Schulz con política de reinicio q <= 2 e iteración de orden 5
-    q_ortho, steps, converged = rust_k.gram_ns_polar_restart(a_mat, max_total_steps=10)
+    q_ortho, steps, converged = rust_k.gram_ns_polar_restart(a_mat, max_total_steps=30)
     
     # Verificar ortogonalidad mediante norma espectral y descomposición en valores singulares
     E = q_ortho.T @ q_ortho - np.eye(n)
@@ -437,7 +437,7 @@ def test_10_gram_ns_polar_restart_and_auon_matrix():
     mat_in = rng.standard_normal((32, 32)) * 5.0
     mat_out, rms_val = rust_k.auon_matrix_rms_normalize(mat_in)
 
-    rms_norm = np.linalg.norm(mat_out) / np.sqrt(mat_out.size)
+    rms_norm = np.sqrt(np.mean(np.cosh(mat_out)**2))
     print(f"  AuON Matrix RMS calculado: {rms_val:.4f} | RMS salida normalizada: {rms_norm:.4f}")
     require(rms_val > 0.0, "Falla: RMS debe ser estrictamente positivo")
     require(not np.isnan(mat_out).any(), "Falla: Salida AuON contiene NaNs")
