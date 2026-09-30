@@ -1,69 +1,28 @@
 # Cerebras-GPT-OSS-120B — Iteración 2 (Paso 1)
 
-## Red‑Team SOTA Audit & Mathematical‑Physics Review  
-**POLYDIM Serie 900 – High‑Dimensional Geometric Computing ( \(D\ge 10^{6}\) , \(S^{\,D-1}\) )**  
-
-> **Objetivo** – Analizar los cuatro “pilares” que sustentan la cadena de cálculo en entornos de dimensión extrema, con énfasis en:  
-
-* **Casos límite asintóticos** ( \(D\!\to\!\infty\) , \(K\!\ll\! D\) pero \(K\) puede crecer como \(\mathcal{O}(D^{1/2})\) ).  
-* **Números de condición** \(\kappa>10^{6}\).  
-* **Cuellos de botella de latencia** y **concurrencia sin copias** (zero‑copy).  
-
-A continuación se presentan los hallazgos, modos de falla, límites de \(\kappa\) y propuestas de mejora matemática y de ingeniería para cada pilar.
+**POLYDIM Serie 900 – Red‑Team SOTA Audit**  
+**High‑Dimensional Geometric Computing ( D ≥ 10⁶ , S^{D‑1} )**  
+**Four‑Pillar Review – Edge‑Case, κ > 10⁶, Latency & Zero‑Copy Concurrency**  
 
 ---
 
-## 1. Cayley‑Stiefel Matrix‑Free Retraction  
-\[
-\boxed{R_{\text{Cayley}}(X)=X\bigl(I+ \tfrac12\Omega\bigr)^{-1}\bigl(I-\tfrac12\Omega\bigr)},
-\qquad \Omega = X^{\!\top}Y - Y^{\!\top}X\in\mathbb{R}^{K\times K},
-\]
-con coste **\( \mathcal{O}(DK^{2}+K^{3})\)** cuando se usa la fórmula de **Sherman‑Morrison‑Woodbury (SMW)** para invertir \(\bigl(I+\tfrac12\Omega\bigr)\).
+## 1. Executive Summary  
 
-### 1.1 Análisis asintótico
+| Pillar | Nominal Complexity | Critical κ‑limit | Dominant Latency Source | Zero‑Copy Feasibility | Primary Failure Mode (κ > 10⁶) |
+|--------|--------------------|------------------|--------------------------|-----------------------|--------------------------------|
+| **1. Cayley‑Stiefel Matrix‑Free Retraction** | **O(D K² + K³)** (SMW) | κ ≈ 10⁶ for **I + ½A** (A = skew‑sym) | Global‑reduction on **K³** (small‑K) and **D K²** memory‑bandwidth | ✔︎ achievable with *in‑place* “view” buffers, but *SMW* updates force copy‑on‑write when rank‑1 updates become ill‑conditioned. | Breakdown of Sherman‑Morrison‑Woodbury (SMW) when the rank‑1 denominator **1 + vᵀM⁻¹u** ≈ 0 → O(κ) blow‑up, loss of orthogonality, catastrophic drift on the Stiefel manifold. |
+| **2. Clifford Cl(D) Bivector Rotors** | **O(D K)** per rotor (K = #planes) – effectively **O(D²)** for full‑rank rotation | κ ≈ 10⁶ for the *metric* matrix **G = RᵀR** (R rotor) | Exponential map evaluation (cosh/sinh) on large bivector norms; SIMD‑friendly but limited by **log‑exp** latency. | ✔︎ using *structure‑of‑arrays* (SoA) and *GPU‑shared memory* eliminates host‑device copies; however, the **geometric product** requires temporary buffers proportional to **D²**. | Overflow/underflow in the exponential of a bivector with norm > √(log κ); backward‑error bound (Higham) grows as **γ_{2K} · κ** → loss of orthogonality > 10⁻⁶. |
+| **3. Order‑5 Padé‑Taylor Polar Iteration** | **O(D³)** (dense matrix) but *in‑place* reduces to **O(D²)** for sparse‑ish **R**; constant‑factor 1/8. | κ ≈ 10⁶ for **R = QᵀQ**; iteration diverges when **κ > (1 + √2)⁴ ≈ 34** unless *QDWH* fallback is triggered. | Two matrix‑multiplications per iteration (R = QᵀQ, Q ← …); each incurs **global sync** on GPU/CPU. | ✔︎ the recurrence can be written **in‑place** (no extra allocation) – zero‑copy is possible, but the *fallback* to QDWH forces a copy of **Q** to a QR routine. | Padé‑Taylor region of attraction shrinks dramatically for κ > 10⁶ → stagnation, rounding‑error amplification, eventual loss of unitary property. |
+| **4. PMTP WAN Phase 10/11 – RaptorQ (RFC 6330)** | **O(N log N)** encoding/decoding; **N ≈ D/word‑size**. | “κ” analog = erasure rate **ε**; safe region **ε ≤ 0.30** for 4‑way cross‑block interleaving; beyond **ε ≈ 0.45** decoding failure probability > 10⁻⁶. | UDP socket‑level *RTT* + *re‑transmission* jitter; kernel‑space copy‑to‑user (if not using *sendmsg* with iovec). | ✔︎ scatter‑gather I/O (iovec) yields true zero‑copy; however, the *decoder* must materialise a dense generator matrix for each block, causing temporary **O(N K)** copies. | Burst erasures > 30 % in a single interleaving block cause *rank deficiency* → decoder stalls, exponential back‑off in recovery time. |
 
-| Regimen | \(K\) vs. \(D\) | Dominio de coste | Comentario |
-|---|---|---|---|
-| **(a) \(K\ll D^{1/2}\)** | \(K = \mathcal{O}(D^{\alpha}),\;0<\alpha<\tfrac12\) | \(\mathcal{O}(DK^{2})\) | El término \(K^{3}\) es despreciable. |
-| **(b) \(K = \Theta(D^{1/2})\)** | \(K = c\sqrt{D}\) | \(\mathcal{O}(D^{2})\) | Ambos términos son del mismo orden. |
-| **(c) \(K = \Theta(D)\)** | No práctico para “matrix‑free” (memoria \(\sim D^{2}\)). | — | Se rompe la premisa de “free”. |
+Below we dissect each pillar, expose the asymptotic edge cases, quantify the condition‑number limits, and propose mathematically‑grounded mitigations that preserve zero‑copy concurrency.
 
-En el caso (a) la complejidad lineal‑cuadrática es la mejor que se puede lograr sin almacenar la matriz completa.  
+---
 
-### 1.2 Condición y estabilidad numérica  
+## 2. Methodology  
 
-* La matriz \(\Omega\) es **skew‑symmetric**; sus valores propios aparecen en pares \(\pm i\lambda\).  
-* La condición de la retraction está gobernada por  
-  \[
-  \kappa_{\text{ret}} = \bigl\| (I+\tfrac12\Omega)^{-1}\bigr\|_{2}\,
-                     \bigl\| I+\tfrac12\Omega \bigr\|_{2}
-                 = \frac{1+\tfrac12\|\Omega\|_{2}}{1-\tfrac12\|\Omega\|_{2}} .
-  \]
-  Por lo tanto, **\(\|\Omega\|_{2}<2\)** es necesario para que \(\kappa_{\text{ret}}\) sea finito.  
-* Cuando \(\|\Omega\|_{2}\to 2^{-}\) se tiene \(\kappa_{\text{ret}}\to\infty\). En práctica, para \(\kappa_{\text{ret}}>10^{6}\) se requiere  
-  \[
-  \|\Omega\|_{2} \gtrsim 2\Bigl(1-\tfrac{1}{\sqrt{10^{6}}}\Bigr)\approx 1.998 .
-  \]
-
-> **Modo de falla** – Si la actualización \(Y\) lleva a un \(\Omega\) con norma > 1.99, la SMW inversion se vuelve numéricamente explosiva; los errores de redondeo se amplifican en \(\mathcal{O}(\kappa_{\text{ret}}\,\varepsilon_{\text{mach}})\).
-
-### 1.3 Cuellos de latencia  
-
-* **Bottleneck 1 – Reducción de \(\Omega\)**: requiere un **All‑Reduce** de \(K^{2}\) valores. En redes WAN con RTT ≈ 30 ms, la latencia domina cuando \(K\gtrsim 2^{10}\).  
-* **Bottleneck 2 – SMW solve**: la factorización de \(\bigl(I+\tfrac12\Omega\bigr)\) (cubic \(K^{3}\)) es serial en la mayoría de implementaciones BLAS‑3.  
-
-### 1.4 Zero‑Copy Concurrency  
-
-* La construcción de \(\Omega\) puede hacerse **in‑place** usando *views* de la memoria de \(X\) y \(Y\) (p.ej. `Eigen::Map`).  
-* Para evitar copias en la fase SMW, se recomienda **fusión de kernels** en GPU:  
-  * kernel 1 → compute \(\Omega\) + store en buffer “shared”.  
-  * kernel 2 → factoriza \((I+\tfrac12\Omega)\) usando cuSOLVER **without copying**.  
-
-### 1.5 Mejora propuesta  
-
-| Mejora | Idea | Impacto esperado |
-|---|---|---|
-| **(i) Pre‑condicionamiento de \(\Omega\)** | Aplicar una **escalada ortogonal** \(\Omega \leftarrow \alpha \Omega\) con \(\alpha = \min\bigl(1,\; 1.9/\|\Omega\|_{2}\bigr)\). | Reduce \(\kappa_{\text{ret}}\) a < 10⁴, permite usar SMW con \(\kappa>10^{6}\). |
-| **(ii) Low‑rank Woodbury + Randomized Sketch** | Si \(\Omega\) es “effectively low‑rank”, escribe \(\Omega = UV^{\top}\) con \(U,V\in\mathbb{R}^{K\times r}\) (r ≪ K) mediante **subspace iteration**. | Coste \(\mathcal{O}(DKr + Kr^{2})\) y evita el cubico \(K^{3}\). |
-| **(iii) Block‑Krylov Solver** | Reemplazar la SMW por un **GMRES** pre‑condicionado con bloque de tamaño \(b\) (p.ej. 64) que opera directamente sobre la representación “matrix‑free”. | Latencia ≈ 2 ×  iteraciones · \(b\) · \(D\) (mucho menor que \(K^{3}\) para \(K\ge 2^{12}\)). |
-| **(iv) Over‑lap All‑Reduce + Compute** | Intercalar la reducción de \(\Omega\) con la generación de la siguiente actualización
+1. **Analytic Asymptotics** – Derive leading‑order terms for D ≫ K, K ≈ D, and K ≈ √D.  
+2. **Condition‑Number Propagation** – Track κ through each algebraic transformation (SMW, exponential map, Padé approximant, linear system).  
+3. **Latency Modeling** – Combine *memory‑bandwidth* (B ≈ 200 GB/s on modern Xeon) and *compute‑throughput* (F ≈ 2 TFLOP/s) to obtain lower bounds on wall‑clock time.  
+4. **Zero‑Copy Feasibility** – Map each operation to a *view* or *in‑place* primitive (e.g., `Eigen::Map`, `torch::as_strided`, `cudaMemcpyAsync` with `cudaMemcpyDeviceToDevice`).  
+5. **Red‑Team Stress Tests** – Simulate adversarial perturbations (e.g., rank‑1 updates with denominator ≈ 10⁻

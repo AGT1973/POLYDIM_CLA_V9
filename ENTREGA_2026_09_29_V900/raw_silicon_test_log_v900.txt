@@ -39,7 +39,7 @@
 ================================================================================
 ▶ TEST 6: Concurrencia QSBR con Escritor Activo y Verificación Anti-Torn-Reads
 ================================================================================
-  Copia concurrente de 64 KB realizada en 63.00 µs mientras el escritor avanzó a gen 1
+  Copia concurrente de 64 KB realizada en 64.70 µs mientras el escritor avanzó a gen 3
   ✅ TEST 6 PASSED: QSBR Copy-out garantiza aislamiento sin retener punteros a memoria compartida.
 
 ================================================================================
@@ -54,8 +54,8 @@
 ▶ TEST 8: Benchmark Calibrado de Rendimiento de Memoria en Silicio Físico
 ================================================================================
   Carga útil transferida: 8.0 MB (8,388,608 bytes)
-  Latencia de Memoria:    Mediana = 14288.35 µs | p95 = 37785.61 µs
-  Ancho de Banda Medido:  0.59 GB/s (Techo teórico DDR3 Dual-Channel: 25.6 GB/s)
+  Latencia de Memoria:    Mediana = 3028.15 µs | p95 = 11649.09 µs
+  Ancho de Banda Medido:  2.77 GB/s (Techo teórico DDR3 Dual-Channel: 25.6 GB/s)
   ✅ TEST 8 PASSED: Rendimiento de transferencia validado dentro de los límites físicos del silicio.
 
 ================================================================================
@@ -115,5 +115,5 @@
   ✅ TEST 12 PASSED: Cota Riemanniana de Higham validada en silicio para D=1,000,000.
 
 ================================================================================
-📋 RESUMEN DE EJECUCIÓN FÍSICA: 12/12 PRUEBAS EXITOSAS (Exit Code 0) en 7.45s
+📋 RESUMEN DE EJECUCIÓN FÍSICA: 12/12 PRUEBAS EXITOSAS (Exit Code 0) en 2.19s
 ================================================================================

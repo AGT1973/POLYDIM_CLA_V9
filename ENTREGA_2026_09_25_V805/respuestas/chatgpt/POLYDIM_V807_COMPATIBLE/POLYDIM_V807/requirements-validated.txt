@@ -1,2 +1,0 @@
-# Version used in the Linux validation environment; not a universal platform lock.
-numpy==2.3.5
