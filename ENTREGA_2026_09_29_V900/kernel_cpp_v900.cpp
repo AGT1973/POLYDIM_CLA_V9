@@ -1,21 +1,15 @@
 // kernel_cpp_v900.cpp
-// Kernel Nativo C++20 POLYDIM V900 (Master Industrial SOTA Release)
+// Kernel Nativo C++20 POLYDIM V900 (Master Industrial Release)
 //
 // ============================================================================
-// ALCANCE ARQUITECTÓNICO Y GUÍA PEDAGÓGICA PARA CIENTÍFICOS DE DATOS:
+// ALCANCE ARQUITECTÓNICO Y CONTRATOS NUMÉRICOS:
 //
-// 1. ¿Qué es POLYDIM?
-//    A diferencia de las arquitecturas tradicionales que fuerzan la serialización
-//    de representaciones latentes a secuencias 1D de texto tokenizado (Gusano 1D),
-//    POLYDIM opera intercambiando directamente tensores continuos en variedades
-//    hiperdimensionales ($S^{D-1}$) a través de memoria compartida (PMTP).
-//
-// 2. Novedades Teóricas V900 Integradas:
-//    - Secante RIP Baraniuk-Wakin: cota formal m >= C eps^-2 [d_A ln(V/tau^d_A) + d_A ln(1/eps) + ln(1/rho) + ln N].
-//    - Estimador Two-NN en Runtime (Nature 2017) para dimensión intrínseca d_A.
-//    - Iteración Polar Gram Newton-Schulz (Dao Lab 2026) con política de reinicio q <= 2.
-//    - Freno AuON con escala Frobenius RMS ||cosh(U)||_F / sqrt(N).
-//    - Distancia geodésica Riemanniana cordal estable 2*arcsin(0.5 * ||u - v||).
+// 1. Invariantes Geométricas y Numéricas SOTA:
+//    - Distancia Geodésica Riemanniana sobre vectores normalizados con LASSQ.
+//    - Freno Espectral AuON log-cosh exacto sin truncamiento perjudicial.
+//    - Iteración Polar Gram Newton-Schulz con pre-escalado Frobenius riguroso.
+//    - Retracción Stiefel Cayley-SMW sin secciones críticas OpenMP serializantes.
+//    - Estimador Two-NN insesgado con protección contra singularidades de división por cero.
 // ============================================================================
 
 #include <iostream>
@@ -25,6 +19,7 @@
 #include <algorithm>
 #include <chrono>
 #include <atomic>
+#include <limits>
 #include <immintrin.h>
 #include <omp.h>
 
@@ -35,7 +30,7 @@
 #endif
 
 // ============================================================================
-// 1. ESTRUCTURA DE ERROR Y TELEMETRÍA POD FFI
+// 1. ESTRUCTURA DE ERROR Y TELEMETRÍA POD FFI (ALIGN 8, 280 BYTES)
 // ============================================================================
 
 #pragma pack(push, 8)
@@ -47,7 +42,10 @@ struct PolydimErrorV900 {
 };
 #pragma pack(pop)
 
-static inline void set_error_success(PolydimErrorV900* err) {
+static_assert(sizeof(PolydimErrorV900) == 280, "ABI Mismatch: PolydimErrorV900 must be exactly 280 bytes");
+static_assert(alignof(PolydimErrorV900) == 8, "ABI Mismatch: PolydimErrorV900 must have 8-byte alignment");
+
+static inline void set_error_success(PolydimErrorV900* err) noexcept {
     if (err) {
         err->code = 0;
         err->msg[0] = '\0';
@@ -56,14 +54,43 @@ static inline void set_error_success(PolydimErrorV900* err) {
     }
 }
 
-static inline void set_error_msg(PolydimErrorV900* err, uint32_t code, const char* message) {
+static inline void set_error_msg(PolydimErrorV900* err, uint32_t code, const char* message) noexcept {
     if (err) {
         err->code = code;
-        size_t len = strlen(message);
+        err->arena_id = 0;
+        err->gen = 0;
+        std::memset(err->msg, 0, sizeof(err->msg));
+        size_t len = std::strlen(message);
         if (len > 255) len = 255;
-        memcpy(err->msg, message, len);
-        err->msg[len] = '\0';
+        std::memcpy(err->msg, message, len);
     }
+}
+
+// ============================================================================
+// HELPERS NUMÉRICOS INCONDICIONADOS (Blue's Algorithm / LASSQ)
+// ============================================================================
+
+static inline double lassq_norm_cpp(const double* x, size_t n) noexcept {
+    double scale = 0.0;
+    double ssq = 1.0;
+
+    for (size_t i = 0; i < n; ++i) {
+        double ax = std::abs(x[i]);
+        if (std::isnan(ax) || std::isinf(ax)) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+        if (ax != 0.0) {
+            if (scale < ax) {
+                double r = scale / ax;
+                ssq = 1.0 + ssq * r * r;
+                scale = ax;
+            } else {
+                double r = ax / scale;
+                ssq += r * r;
+            }
+        }
+    }
+    return scale * std::sqrt(ssq);
 }
 
 // ============================================================================
@@ -77,42 +104,52 @@ POLYDIM_EXPORT int polydim_cpp_auon_log_cosh_brake_v900(
     double* loss_out,
     double* grad_out,
     PolydimErrorV900* err
-) {
-    if (!loss_out || !grad_out) {
-        set_error_msg(err, 1, "Null pointer passed to cpp_auon_log_cosh_brake");
-        return -1;
+) noexcept {
+    try {
+        if (!loss_out || !grad_out) {
+            set_error_msg(err, 1, "Null pointer passed to cpp_auon_log_cosh_brake");
+            return -1;
+        }
+
+        if (!std::isfinite(residual) || !std::isfinite(scale_s) || !std::isfinite(lambda)) {
+            set_error_msg(err, 2, "NaN or Infinity in input arguments");
+            return -2;
+        }
+
+        if (scale_s <= 0.0 || lambda < 0.0) {
+            set_error_msg(err, 3, "Invalid scale_s <= 0 or lambda < 0");
+            return -3;
+        }
+
+        if (scale_s < 1e-12) {
+            set_error_msg(err, 4, "scale_s below minimum 1e-12");
+            return -4;
+        }
+
+        const double ln2 = 0.693147180559945309417232121458;
+        double z = residual / scale_s;
+        double abs_z = std::abs(z);
+
+        double log_cosh_z;
+        if (abs_z <= 20.0) {
+            double s = std::sinh(0.5 * abs_z);
+            log_cosh_z = std::log1p(2.0 * s * s);
+        } else {
+            log_cosh_z = abs_z + std::log1p(std::exp(-2.0 * abs_z)) - ln2;
+        }
+
+        *loss_out = lambda * scale_s * scale_s * log_cosh_z;
+        *grad_out = lambda * scale_s * std::tanh(z);
+
+        set_error_success(err);
+        return 0;
+    } catch (const std::exception& e) {
+        set_error_msg(err, 99, e.what());
+        return -99;
+    } catch (...) {
+        set_error_msg(err, 99, "Unknown exception caught");
+        return -99;
     }
-
-    if (std::isnan(residual) || std::isinf(residual) || std::isnan(scale_s) || std::isinf(scale_s) || std::isnan(lambda) || std::isinf(lambda)) {
-        set_error_msg(err, 2, "NaN or Infinity in input arguments");
-        return -2;
-    }
-
-    if (scale_s <= 0.0 || lambda < 0.0) {
-        set_error_msg(err, 3, "Invalid scale_s <= 0 or lambda < 0");
-        return -3;
-    }
-
-    const double ln2 = 0.693147180559945309417232121458;
-    double z = std::clamp(residual / scale_s, -30.0, 30.0);
-    double abs_z = std::abs(z);
-
-    // Forma numéricamente incondicionada sin cancelación catastrófica:
-    // Para |z| <= 20: ln(cosh(z)) = ln(1 + 2*sinh^2(z/2)) = log1p(2 * sinh^2(z/2))
-    // Para |z| > 20:  ln(cosh(z)) = |z| + log1p(exp(-2|z|)) - ln(2)
-    double log_cosh_z;
-    if (abs_z <= 20.0) {
-        double s = std::sinh(0.5 * abs_z);
-        log_cosh_z = std::log1p(2.0 * s * s);
-    } else {
-        log_cosh_z = abs_z + std::log1p(std::exp(-2.0 * abs_z)) - ln2;
-    }
-
-    *loss_out = lambda * scale_s * scale_s * log_cosh_z;
-    *grad_out = lambda * scale_s * std::tanh(z);
-
-    set_error_success(err);
-    return 0;
 }
 
 POLYDIM_EXPORT int polydim_cpp_auon_matrix_rms_normalize_v900(
@@ -122,50 +159,66 @@ POLYDIM_EXPORT int polydim_cpp_auon_matrix_rms_normalize_v900(
     double* matrix_out,
     double* rms_out,
     PolydimErrorV900* err
-) {
-    if (!matrix_in || !matrix_out || !rms_out) {
-        set_error_msg(err, 1, "Null pointers in cpp_auon_matrix_rms_normalize");
-        return -1;
-    }
+) noexcept {
+    try {
+        if (!matrix_in || !matrix_out || !rms_out) {
+            set_error_msg(err, 1, "Null pointers in cpp_auon_matrix_rms_normalize");
+            return -1;
+        }
 
-    int64_t n = static_cast<int64_t>(rows) * static_cast<int64_t>(cols);
-    if (n == 0) {
-        set_error_msg(err, 2, "Size is 0");
-        return -2;
-    }
+        int64_t n = static_cast<int64_t>(rows) * static_cast<int64_t>(cols);
+        if (n <= 0) {
+            set_error_msg(err, 2, "Size is 0 or negative");
+            return -2;
+        }
 
-    double f_sq = 0.0;
-    #pragma omp parallel for reduction(+:f_sq) schedule(static)
-    for (int64_t i = 0; i < n; ++i) {
-        double v = matrix_in[i];
-        f_sq += v * v;
-    }
-    double f_norm = std::sqrt(f_sq);
-    if (f_norm < 1e-12) f_norm = 1e-12;
+        // Verificar finitud
+        for (int64_t i = 0; i < n; ++i) {
+            if (!std::isfinite(matrix_in[i])) {
+                set_error_msg(err, 3, "Non-finite values in matrix input");
+                return -3;
+            }
+        }
 
-    double cosh_sq_sum = 0.0;
-    #pragma omp parallel for reduction(+:cosh_sq_sum) schedule(static)
-    for (int64_t i = 0; i < n; ++i) {
-        double norm_v = matrix_in[i] / f_norm;
-        double c = std::cosh(norm_v);
-        cosh_sq_sum += c * c;
-    }
-    double rms = std::sqrt(cosh_sq_sum / static_cast<double>(n));
+        const double ln2 = 0.693147180559945309417232121458;
+        double cosh_sq_sum = 0.0;
 
-    double sqrt_n = std::sqrt(static_cast<double>(n));
-    double scale = sqrt_n / (rms + 1e-8);
-    #pragma omp parallel for schedule(static)
-    for (int64_t i = 0; i < n; ++i) {
-        matrix_out[i] = (matrix_in[i] / f_norm) * scale;
-    }
+        #pragma omp parallel for reduction(+:cosh_sq_sum) schedule(static)
+        for (int64_t i = 0; i < n; ++i) {
+            double a = std::abs(matrix_in[i]);
+            double c_sq;
+            if (a < 350.0) {
+                double e2  = std::exp(2.0 * a);
+                double e2i = std::exp(-2.0 * a);
+                c_sq = (e2 + 2.0 + e2i) * 0.25;
+            } else {
+                c_sq = std::exp(2.0 * (a - ln2));
+            }
+            cosh_sq_sum += c_sq;
+        }
 
-    *rms_out = rms;
-    set_error_success(err);
-    return 0;
+        double rms = std::sqrt(cosh_sq_sum / static_cast<double>(n));
+        double scale = 1.0 / (rms + 1e-8);
+
+        #pragma omp parallel for schedule(static)
+        for (int64_t i = 0; i < n; ++i) {
+            matrix_out[i] = matrix_in[i] * scale;
+        }
+
+        *rms_out = rms;
+        set_error_success(err);
+        return 0;
+    } catch (const std::exception& e) {
+        set_error_msg(err, 99, e.what());
+        return -99;
+    } catch (...) {
+        set_error_msg(err, 99, "Unknown exception caught");
+        return -99;
+    }
 }
 
 // ============================================================================
-// 3. MÉTRICA GEODÉSICA ANGULAR RIEMANNIANA CORDAL EN S^(D-1) (OpenMP)
+// 3. MÉTRICA GEODÉSICA ANGULAR RIEMANNIANA EN S^(D-1) (OpenMP)
 // ============================================================================
 
 POLYDIM_EXPORT int polydim_cpp_riemannian_geodesic_v900(
@@ -175,57 +228,59 @@ POLYDIM_EXPORT int polydim_cpp_riemannian_geodesic_v900(
     double* angular_dist_out,
     double* chordal_dist_out,
     PolydimErrorV900* err
-) {
-    if (!u || !v || !angular_dist_out || !chordal_dist_out) {
-        set_error_msg(err, 1, "Null pointer in cpp_riemannian_geodesic");
-        return -1;
-    }
+) noexcept {
+    try {
+        if (!u || !v || !angular_dist_out || !chordal_dist_out) {
+            set_error_msg(err, 1, "Null pointer in cpp_riemannian_geodesic");
+            return -1;
+        }
 
-    if (dim == 0) {
-        set_error_msg(err, 2, "Dimension is 0");
-        return -2;
-    }
+        if (dim == 0) {
+            set_error_msg(err, 2, "Dimension is 0");
+            return -2;
+        }
 
-    double norm_u_sq = 0.0;
-    double norm_v_sq = 0.0;
-    double chordal_sq = 0.0;
-    int64_t d = static_cast<int64_t>(dim);
+        size_t d = static_cast<size_t>(dim);
+        double norm_u = lassq_norm_cpp(u, d);
+        double norm_v = lassq_norm_cpp(v, d);
 
-    #pragma omp parallel for reduction(+:norm_u_sq, norm_v_sq, chordal_sq) schedule(static)
-    for (int64_t i = 0; i < d; ++i) {
-        double ui = u[i];
-        double vi = v[i];
-        norm_u_sq += ui * ui;
-        norm_v_sq += vi * vi;
-        double diff = ui - vi;
-        chordal_sq += diff * diff;
-    }
+        if (!std::isfinite(norm_u) || !std::isfinite(norm_v) || norm_u < 1e-15 || norm_v < 1e-15) {
+            set_error_msg(err, 3, "Degenerate or non-finite vector norm");
+            return -3;
+        }
 
-    double norm_u = std::sqrt(norm_u_sq);
-    double norm_v = std::sqrt(norm_v_sq);
+        double inv_u = 1.0 / norm_u;
+        double inv_v = 1.0 / norm_v;
 
-    if (norm_u < 1e-15 || norm_v < 1e-15) {
-        set_error_msg(err, 3, "Degenerate vector norm < 1e-15");
-        return -3;
-    }
+        double dot = 0.0;
+        double chordal_sq = 0.0;
+        int64_t d_i64 = static_cast<int64_t>(d);
 
-    double chordal_dist = std::sqrt(chordal_sq);
-    if (chordal_dist < 1e-30) {
-        *angular_dist_out = 0.0;
-        *chordal_dist_out = 0.0;
+        #pragma omp parallel for reduction(+:dot, chordal_sq) schedule(static)
+        for (int64_t i = 0; i < d_i64; ++i) {
+            double un = u[i] * inv_u;
+            double vn = v[i] * inv_v;
+            dot += un * vn;
+            double diff = un - vn;
+            chordal_sq += diff * diff;
+        }
+
+        dot = std::clamp(dot, -1.0, 1.0);
+        double angle = std::acos(dot);
+        double chord = std::sqrt(chordal_sq);
+
+        *angular_dist_out = angle;
+        *chordal_dist_out = chord;
+
         set_error_success(err);
         return 0;
+    } catch (const std::exception& e) {
+        set_error_msg(err, 99, e.what());
+        return -99;
+    } catch (...) {
+        set_error_msg(err, 99, "Unknown exception caught");
+        return -99;
     }
-
-    double avg_norm = 0.5 * (norm_u + norm_v);
-    double half_chord = std::clamp(0.5 * chordal_dist / avg_norm, 0.0, 1.0);
-    double angular_dist = 2.0 * std::asin(half_chord);
-
-    *angular_dist_out = angular_dist;
-    *chordal_dist_out = chordal_dist;
-
-    set_error_success(err);
-    return 0;
 }
 
 // ============================================================================
@@ -239,75 +294,94 @@ POLYDIM_EXPORT int polydim_cpp_two_nn_intrinsic_dim_v900(
     double* d_intrinsic_mle_out,
     double* d_intrinsic_ucb_out,
     PolydimErrorV900* err
-) {
-    if (!points || !d_intrinsic_mle_out || !d_intrinsic_ucb_out) {
-        set_error_msg(err, 1, "Null pointer in cpp_two_nn_intrinsic_dim");
-        return -1;
-    }
+) noexcept {
+    try {
+        if (!points || !d_intrinsic_mle_out || !d_intrinsic_ucb_out) {
+            set_error_msg(err, 1, "Null pointer in cpp_two_nn_intrinsic_dim");
+            return -1;
+        }
 
-    int64_t n = static_cast<int64_t>(num_pts);
-    int64_t d = static_cast<int64_t>(dim);
+        int64_t n = static_cast<int64_t>(num_pts);
+        int64_t d = static_cast<int64_t>(dim);
 
-    if (n < 5) {
-        set_error_msg(err, 2, "n < 5");
-        return -2;
-    }
+        if (n < 5 || d == 0) {
+            set_error_msg(err, 2, "n < 5 or dim == 0");
+            return -2;
+        }
 
-    std::vector<double> mu_values(n, 0.0);
-    std::vector<int> valid_flags(n, 0);
+        std::vector<double> mu_values(n, 0.0);
+        std::vector<int> valid_flags(n, 0);
 
-    #pragma omp parallel for schedule(dynamic, 16)
-    for (int64_t i = 0; i < n; ++i) {
-        const double* xi = points + i * d;
-        double d1 = 1e30;
-        double d2 = 1e30;
+        #pragma omp parallel for schedule(dynamic, 16)
+        for (int64_t i = 0; i < n; ++i) {
+            const double* xi = points + i * d;
+            double d1 = 1e30;
+            double d2 = 1e30;
 
-        for (int64_t j = 0; j < n; ++j) {
-            if (i == j) continue;
-            const double* xj = points + j * d;
-            double dist_sq = 0.0;
-            for (int64_t k = 0; k < d; ++k) {
-                double diff = xi[k] - xj[k];
-                dist_sq += diff * diff;
+            for (int64_t j = 0; j < n; ++j) {
+                if (i == j) continue;
+                const double* xj = points + j * d;
+                double dist_sq = 0.0;
+                for (int64_t k = 0; k < d; ++k) {
+                    double diff = xi[k] - xj[k];
+                    dist_sq += diff * diff;
+                }
+                double dist = std::sqrt(dist_sq);
+
+                if (dist < d1) {
+                    d2 = d1;
+                    d1 = dist;
+                } else if (dist < d2) {
+                    d2 = dist;
+                }
             }
-            double dist = std::sqrt(dist_sq);
 
-            if (dist < d1) {
-                d2 = d1;
-                d1 = dist;
-            } else if (dist < d2) {
-                d2 = dist;
+            if (d1 > 1e-15 && std::isfinite(d2) && d2 >= d1) {
+                double mu = d2 / d1;
+                if (std::isfinite(mu) && mu > 1.0 + 1e-12) {
+                    mu_values[i] = mu;
+                    valid_flags[i] = 1;
+                }
             }
         }
 
-        if (d1 > 1e-15 && d2 >= d1) {
-            mu_values[i] = d2 / d1;
-            valid_flags[i] = 1;
+        double sum_log_mu = 0.0;
+        int64_t n_valid = 0;
+        for (int64_t i = 0; i < n; ++i) {
+            if (valid_flags[i]) {
+                sum_log_mu += std::log(mu_values[i]);
+                n_valid++;
+            }
         }
-    }
 
-    double sum_log_mu = 0.0;
-    int64_t n_valid = 0;
-    for (int64_t i = 0; i < n; ++i) {
-        if (valid_flags[i]) {
-            sum_log_mu += std::log(mu_values[i]);
-            n_valid++;
+        if (n_valid < 3) {
+            set_error_msg(err, 3, "Insufficient valid mu values");
+            return -3;
         }
+
+        if (sum_log_mu <= 1e-12 || !std::isfinite(sum_log_mu)) {
+            *d_intrinsic_mle_out = 1.0;
+            *d_intrinsic_ucb_out = 1.0;
+            set_error_success(err);
+            return 0;
+        }
+
+        // Estimador MLE insesgado: d = (N - 1) / sum(ln(mu))
+        double d_mle = static_cast<double>(n_valid - 1) / sum_log_mu;
+        double d_ucb = d_mle * (1.0 + 1.96 / std::sqrt(static_cast<double>(n_valid)));
+
+        *d_intrinsic_mle_out = d_mle;
+        *d_intrinsic_ucb_out = d_ucb;
+
+        set_error_success(err);
+        return 0;
+    } catch (const std::exception& e) {
+        set_error_msg(err, 99, e.what());
+        return -99;
+    } catch (...) {
+        set_error_msg(err, 99, "Unknown exception caught");
+        return -99;
     }
-
-    if (n_valid == 0) {
-        set_error_msg(err, 3, "No valid mu values");
-        return -3;
-    }
-
-    double d_mle = static_cast<double>(n_valid) / sum_log_mu;
-    double d_ucb = d_mle * (1.0 + 1.96 / std::sqrt(static_cast<double>(n_valid)));
-
-    *d_intrinsic_mle_out = d_mle;
-    *d_intrinsic_ucb_out = d_ucb;
-
-    set_error_success(err);
-    return 0;
 }
 
 // ============================================================================
@@ -325,42 +399,51 @@ POLYDIM_EXPORT int polydim_cpp_baraniuk_wakin_feasibility_v900(
     double* m_required_out,
     uint8_t* is_feasible_out,
     PolydimErrorV900* err
-) {
-    if (!m_required_out || !is_feasible_out) {
-        set_error_msg(err, 1, "Null pointer in cpp_baraniuk_wakin_feasibility");
-        return -1;
+) noexcept {
+    try {
+        if (!m_required_out || !is_feasible_out) {
+            set_error_msg(err, 1, "Null pointer in cpp_baraniuk_wakin_feasibility");
+            return -1;
+        }
+
+        if (epsilon_dist <= 0.0 || epsilon_dist >= 1.0 || reach_tau <= 0.0 || failure_rho <= 0.0 || volume_v <= 0.0) {
+            set_error_msg(err, 2, "Invalid parameters");
+            return -2;
+        }
+
+        double da = std::max(intrinsic_dim, 1.0);
+        double eps = epsilon_dist;
+        double tau = reach_tau;
+        double v = volume_v;
+        double rho = failure_rho;
+        double n = static_cast<double>(dim_in);
+
+        double c_const = 1.0; // Hipótesis canónica declarada
+        double arg_geo = std::max(v / std::pow(tau, da), 1.0);
+        double term_geo = std::log(arg_geo);
+        double term_eps = da * std::log(1.0 / eps);
+        double term_prob = std::log(1.0 / rho);
+        double term_ambient = std::log(n);
+
+        double m_req = (c_const / (eps * eps)) * (term_geo + term_eps + term_prob + term_ambient);
+        uint8_t feasible = (static_cast<double>(dim_out) >= m_req) ? 1 : 0;
+
+        *m_required_out = m_req;
+        *is_feasible_out = feasible;
+
+        set_error_success(err);
+        return 0;
+    } catch (const std::exception& e) {
+        set_error_msg(err, 99, e.what());
+        return -99;
+    } catch (...) {
+        set_error_msg(err, 99, "Unknown exception caught");
+        return -99;
     }
-
-    if (epsilon_dist <= 0.0 || epsilon_dist >= 1.0 || reach_tau <= 0.0 || failure_rho <= 0.0) {
-        set_error_msg(err, 2, "Invalid parameters");
-        return -2;
-    }
-
-    double da = std::max(intrinsic_dim, 1.0);
-    double eps = epsilon_dist;
-    double tau = reach_tau;
-    double v = std::max(volume_v, 1.0);
-    double rho = failure_rho;
-    double n = static_cast<double>(dim_in);
-
-    double c_const = 1.0; // Canonical universal constant Baraniuk-Wakin (2008)
-    double term_geo = std::max(std::log(v / std::pow(tau, da)), 1.0);
-    double term_eps = da * std::log(1.0 / eps);
-    double term_prob = std::log(1.0 / rho);
-    double term_ambient = std::log(n);
-
-    double m_req = (c_const / (eps * eps)) * (term_geo + term_eps + term_prob + term_ambient);
-    uint8_t feasible = (static_cast<double>(dim_out) >= m_req) ? 1 : 0;
-
-    *m_required_out = m_req;
-    *is_feasible_out = feasible;
-
-    set_error_success(err);
-    return 0;
 }
 
 // ============================================================================
-// 6. GRAM NEWTON-SCHULZ CON REINICIO q <= 2
+// 6. GRAM NEWTON-SCHULZ CON SCHEDULE [2, 3, 2]
 // ============================================================================
 
 POLYDIM_EXPORT int polydim_cpp_gram_ns_polar_restart_v900(
@@ -371,154 +454,134 @@ POLYDIM_EXPORT int polydim_cpp_gram_ns_polar_restart_v900(
     uint32_t* steps_executed_out,
     uint8_t* is_converged_out,
     PolydimErrorV900* err
-) {
-    if (!matrix_x || !matrix_q_out || !steps_executed_out || !is_converged_out) {
-        set_error_msg(err, 1, "Null pointer in cpp_gram_ns_polar_restart");
-        return -1;
-    }
-
-    int64_t n = static_cast<int64_t>(dim_n);
-    int64_t total = n * n;
-    if (total == 0) {
-        set_error_msg(err, 2, "Size is 0");
-        return -2;
-    }
-
-    memcpy(matrix_q_out, matrix_x, total * sizeof(double));
-
-    // Power iteration para estimar norma espectral (4 iteraciones)
-    std::vector<double> v_vec(n, 1.0 / std::sqrt(static_cast<double>(n)));
-    std::vector<double> w_vec(n, 0.0);
-    std::vector<double> v_next(n, 0.0);
-
-    for (int it = 0; it < 4; ++it) {
-        for (int64_t i = 0; i < n; ++i) {
-            double sum = 0.0;
-            #pragma omp simd reduction(+:sum)
-            for (int64_t j = 0; j < n; ++j) {
-                sum += matrix_q_out[i * n + j] * v_vec[j];
-            }
-            w_vec[i] = sum;
+) noexcept {
+    try {
+        if (!matrix_x || !matrix_q_out || !steps_executed_out || !is_converged_out) {
+            set_error_msg(err, 1, "Null pointer in cpp_gram_ns_polar_restart");
+            return -1;
         }
-        for (int64_t j = 0; j < n; ++j) {
-            double sum = 0.0;
-            #pragma omp simd reduction(+:sum)
-            for (int64_t i = 0; i < n; ++i) {
-                sum += matrix_q_out[i * n + j] * w_vec[i];
-            }
-            v_next[j] = sum;
+
+        int64_t n = static_cast<int64_t>(dim_n);
+        int64_t total = n * n;
+        if (total <= 0) {
+            set_error_msg(err, 2, "Size is 0");
+            return -2;
         }
-        double norm_v = 0.0;
-        for (int64_t j = 0; j < n; ++j) norm_v += v_next[j] * v_next[j];
-        norm_v = std::sqrt(norm_v);
-        if (norm_v > 1e-12) {
-            for (int64_t j = 0; j < n; ++j) v_vec[j] = v_next[j] / norm_v;
-        }
-    }
 
-    double w_sq = 0.0;
-    for (int64_t i = 0; i < n; ++i) {
-        double sum = 0.0;
-        #pragma omp simd reduction(+:sum)
-        for (int64_t j = 0; j < n; ++j) {
-            sum += matrix_q_out[i * n + j] * v_vec[j];
-        }
-        w_sq += sum * sum;
-    }
-    double s_est = std::sqrt(w_sq);
-    double s_bound = std::max(s_est * 1.05, 1e-12);
+        std::memcpy(matrix_q_out, matrix_x, total * sizeof(double));
 
-    #pragma omp parallel for schedule(static)
-    for (int64_t i = 0; i < total; ++i) {
-        matrix_q_out[i] /= s_bound;
-    }
+        // Pre-escalado Frobenius riguroso
+        double s_bound = lassq_norm_cpp(matrix_q_out, static_cast<size_t>(total));
+        if (s_bound < 1e-12) s_bound = 1e-12;
 
-    int64_t max_steps = std::clamp(static_cast<int64_t>(max_total_steps), 1LL, 20LL);
-    std::vector<double> temp_r(total, 0.0);
-    std::vector<double> temp_r2(total, 0.0);
-    std::vector<double> temp_next(total, 0.0);
-
-    const double a = 15.0 / 8.0;
-    const double b = -10.0 / 8.0;
-    const double c = 3.0 / 8.0;
-
-    int64_t executed = 0;
-    bool converged = false;
-
-    for (int64_t step = 0; step < max_steps; ++step) {
-        // 1. R = Q * Q^T
         #pragma omp parallel for schedule(static)
-        for (int64_t i = 0; i < n; ++i) {
-            for (int64_t j = 0; j < n; ++j) {
-                double dot = 0.0;
-                #pragma omp simd reduction(+:dot)
-                for (int64_t k = 0; k < n; ++k) {
-                    dot += matrix_q_out[i * n + k] * matrix_q_out[j * n + k];
-                }
-                temp_r[i * n + j] = dot;
-            }
+        for (int64_t i = 0; i < total; ++i) {
+            matrix_q_out[i] /= s_bound;
         }
 
-        // 2. R2 = R * R
-        #pragma omp parallel for schedule(static)
-        for (int64_t i = 0; i < n; ++i) {
-            for (int64_t j = 0; j < n; ++j) {
-                double dot = 0.0;
-                #pragma omp simd reduction(+:dot)
-                for (int64_t k = 0; k < n; ++k) {
-                    dot += temp_r[i * n + k] * temp_r[k * n + j];
+        const int64_t max_steps = std::clamp<int64_t>(static_cast<int64_t>(max_total_steps), int64_t{1}, int64_t{30});
+        const int64_t schedule[3] = {2, 3, 2};
+        int64_t phase = 0;
+
+        std::vector<double> temp_r(total, 0.0);
+        std::vector<double> temp_r2(total, 0.0);
+        std::vector<double> temp_next(total, 0.0);
+
+        const double a = 15.0 / 8.0;
+        const double b = -10.0 / 8.0;
+        const double c = 3.0 / 8.0;
+
+        int64_t executed = 0;
+        bool converged = false;
+
+        while (executed < max_steps) {
+            int64_t take = std::min(schedule[phase], max_steps - executed);
+
+            for (int64_t step = 0; step < take; ++step) {
+                // 1. R = Q * Q^T
+                #pragma omp parallel for schedule(static)
+                for (int64_t i = 0; i < n; ++i) {
+                    for (int64_t j = 0; j < n; ++j) {
+                        double dot = 0.0;
+                        #pragma omp simd reduction(+:dot)
+                        for (int64_t k = 0; k < n; ++k) {
+                            dot += matrix_q_out[i * n + k] * matrix_q_out[j * n + k];
+                        }
+                        temp_r[i * n + j] = dot;
+                    }
                 }
-                temp_r2[i * n + j] = dot;
+
+                // 2. R2 = R * R
+                #pragma omp parallel for schedule(static)
+                for (int64_t i = 0; i < n; ++i) {
+                    for (int64_t j = 0; j < n; ++j) {
+                        double dot = 0.0;
+                        #pragma omp simd reduction(+:dot)
+                        for (int64_t k = 0; k < n; ++k) {
+                            dot += temp_r[i * n + k] * temp_r[k * n + j];
+                        }
+                        temp_r2[i * n + j] = dot;
+                    }
+                }
+
+                // 3. M = a*I + b*R + c*R2, y Q_next = M * Q
+                #pragma omp parallel for schedule(static)
+                for (int64_t i = 0; i < n; ++i) {
+                    for (int64_t j = 0; j < n; ++j) {
+                        double dot = 0.0;
+                        #pragma omp simd reduction(+:dot)
+                        for (int64_t k = 0; k < n; ++k) {
+                            double m_ik = (i == k ? a : 0.0) + b * temp_r[i * n + k] + c * temp_r2[i * n + k];
+                            dot += m_ik * matrix_q_out[k * n + j];
+                        }
+                        temp_next[i * n + j] = dot;
+                    }
+                }
+
+                std::memcpy(matrix_q_out, temp_next.data(), total * sizeof(double));
+                executed++;
+
+                // Medir convergencia ||Q^T Q - I||_F / sqrt(n)
+                double frob_err_sq = 0.0;
+                #pragma omp parallel for schedule(static) reduction(+:frob_err_sq)
+                for (int64_t i = 0; i < n; ++i) {
+                    for (int64_t j = 0; j < n; ++j) {
+                        double dot = 0.0;
+                        #pragma omp simd reduction(+:dot)
+                        for (int64_t k = 0; k < n; ++k) {
+                            dot += matrix_q_out[k * n + i] * matrix_q_out[k * n + j];
+                        }
+                        double diff = dot - (i == j ? 1.0 : 0.0);
+                        frob_err_sq += diff * diff;
+                    }
+                }
+                double iso_err = std::sqrt(frob_err_sq / static_cast<double>(n));
+                if (iso_err < 1e-10) {
+                    converged = true;
+                    break;
+                }
             }
+
+            if (converged) break;
+            phase = (phase + 1) % 3;
         }
 
-        // 3. M = a*I + b*R + c*R2, y Q_next = M * Q
-        #pragma omp parallel for schedule(static)
-        for (int64_t i = 0; i < n; ++i) {
-            for (int64_t j = 0; j < n; ++j) {
-                double dot = 0.0;
-                #pragma omp simd reduction(+:dot)
-                for (int64_t k = 0; k < n; ++k) {
-                    double m_ik = (i == k ? a : 0.0) + b * temp_r[i * n + k] + c * temp_r2[i * n + k];
-                    dot += m_ik * matrix_q_out[k * n + j];
-                }
-                temp_next[i * n + j] = dot;
-            }
-        }
+        *steps_executed_out = static_cast<uint32_t>(executed);
+        *is_converged_out = converged ? 1 : 0;
 
-        memcpy(matrix_q_out, temp_next.data(), total * sizeof(double));
-        executed++;
-
-        // Medir convergencia ||Q^T Q - I||_F / sqrt(n)
-        double frob_err_sq = 0.0;
-        #pragma omp parallel for schedule(static) reduction(+:frob_err_sq)
-        for (int64_t i = 0; i < n; ++i) {
-            for (int64_t j = 0; j < n; ++j) {
-                double dot = 0.0;
-                #pragma omp simd reduction(+:dot)
-                for (int64_t k = 0; k < n; ++k) {
-                    dot += matrix_q_out[k * n + i] * matrix_q_out[k * n + j];
-                }
-                double diff = dot - (i == j ? 1.0 : 0.0);
-                frob_err_sq += diff * diff;
-            }
-        }
-        double iso_err = std::sqrt(frob_err_sq / static_cast<double>(n));
-        if (iso_err < 1e-4) {
-            converged = true;
-            break;
-        }
+        set_error_success(err);
+        return 0;
+    } catch (const std::exception& e) {
+        set_error_msg(err, 99, e.what());
+        return -99;
+    } catch (...) {
+        set_error_msg(err, 99, "Unknown exception caught");
+        return -99;
     }
-
-    *steps_executed_out = static_cast<uint32_t>(executed);
-    *is_converged_out = converged ? 1 : 0;
-
-    set_error_success(err);
-    return 0;
 }
 
 // ============================================================================
-// 7. EVALUADOR DE DISTORSIÓN DE SECANTES EN VARIEDADES (3072 -> 1536)
+// 7. EVALUADOR DE DISTORSIÓN DE SECANTES EN VARIEDADES
 // ============================================================================
 
 POLYDIM_EXPORT int polydim_cpp_secant_distortion_eval_v900(
@@ -532,89 +595,93 @@ POLYDIM_EXPORT int polydim_cpp_secant_distortion_eval_v900(
     double* delta_max_out,
     double* secant_alpha_out,
     PolydimErrorV900* err
-) {
-    if (!orig_pts || !proj_pts || !l_min_out || !l_max_out || !delta_max_out || !secant_alpha_out) {
-        set_error_msg(err, 1, "Null pointer in cpp_secant_distortion_eval");
-        return -1;
-    }
+) noexcept {
+    try {
+        if (!orig_pts || !proj_pts || !l_min_out || !l_max_out || !delta_max_out || !secant_alpha_out) {
+            set_error_msg(err, 1, "Null pointer in cpp_secant_distortion_eval");
+            return -1;
+        }
 
-    if (num_pts < 2) {
-        set_error_msg(err, 2, "num_pts must be >= 2");
-        return -2;
-    }
+        if (num_pts < 2 || dim_in == 0 || dim_out == 0) {
+            set_error_msg(err, 2, "num_pts >= 2 and dims > 0 required");
+            return -2;
+        }
 
-    int64_t n = static_cast<int64_t>(num_pts);
-    int64_t din = static_cast<int64_t>(dim_in);
-    int64_t dout = static_cast<int64_t>(dim_out);
+        int64_t n = static_cast<int64_t>(num_pts);
+        int64_t din = static_cast<int64_t>(dim_in);
+        int64_t dout = static_cast<int64_t>(dim_out);
 
-    double global_l_min = 1e30;
-    double global_l_max = 0.0;
-    double global_delta_max = 0.0;
-    double global_secant_alpha = 1e30;
+        double global_l_min = 1e30;
+        double global_l_max = 0.0;
+        double global_delta_max = 0.0;
 
-    #pragma omp parallel
-    {
-        double local_l_min = 1e30;
-        double local_l_max = 0.0;
-        double local_delta_max = 0.0;
-        double local_secant_alpha = 1e30;
+        int num_threads = omp_get_max_threads();
+        std::vector<double> thread_l_min(num_threads, 1e30);
+        std::vector<double> thread_l_max(num_threads, 0.0);
+        std::vector<double> thread_delta_max(num_threads, 0.0);
 
-        #pragma omp for schedule(dynamic, 16)
-        for (int64_t i = 0; i < n; ++i) {
-            const double* xi = orig_pts + i * din;
-            const double* yi = proj_pts + i * dout;
+        #pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
+            #pragma omp for schedule(dynamic, 16)
+            for (int64_t i = 0; i < n; ++i) {
+                const double* xi = orig_pts + i * din;
+                const double* yi = proj_pts + i * dout;
 
-            for (int64_t j = i + 1; j < n; ++j) {
-                const double* xj = orig_pts + j * din;
-                const double* yj = proj_pts + j * dout;
+                for (int64_t j = i + 1; j < n; ++j) {
+                    const double* xj = orig_pts + j * din;
+                    const double* yj = proj_pts + j * dout;
 
-                double orig_sq = 0.0;
-                for (int64_t k = 0; k < din; ++k) {
-                    double d = xi[k] - xj[k];
-                    orig_sq += d * d;
-                }
-                double orig_dist = std::sqrt(orig_sq);
-
-                if (orig_dist > 1e-12) {
-                    double proj_sq = 0.0;
-                    for (int64_t k = 0; k < dout; ++k) {
-                        double d = yi[k] - yj[k];
-                        proj_sq += d * d;
+                    double orig_sq = 0.0;
+                    for (int64_t k = 0; k < din; ++k) {
+                        double d = xi[k] - xj[k];
+                        orig_sq += d * d;
                     }
-                    double proj_dist = std::sqrt(proj_sq);
+                    double orig_dist = std::sqrt(orig_sq);
 
-                    double ratio = proj_dist / orig_dist;
-                    if (ratio < local_l_min) local_l_min = ratio;
-                    if (ratio > local_l_max) local_l_max = ratio;
+                    if (orig_dist > 1e-12) {
+                        double proj_sq = 0.0;
+                        for (int64_t k = 0; k < dout; ++k) {
+                            double d = yi[k] - yj[k];
+                            proj_sq += d * d;
+                        }
+                        double proj_dist = std::sqrt(proj_sq);
 
-                    double delta = std::abs(ratio - 1.0);
-                    if (delta > local_delta_max) local_delta_max = delta;
+                        double ratio = proj_dist / orig_dist;
+                        if (ratio < thread_l_min[tid]) thread_l_min[tid] = ratio;
+                        if (ratio > thread_l_max[tid]) thread_l_max[tid] = ratio;
 
-                    if (ratio < local_secant_alpha) local_secant_alpha = ratio;
+                        double delta = std::abs(ratio - 1.0);
+                        if (delta > thread_delta_max[tid]) thread_delta_max[tid] = delta;
+                    }
                 }
             }
         }
 
-        #pragma omp critical
-        {
-            if (local_l_min < global_l_min) global_l_min = local_l_min;
-            if (local_l_max > global_l_max) global_l_max = local_l_max;
-            if (local_delta_max > global_delta_max) global_delta_max = local_delta_max;
-            if (local_secant_alpha < global_secant_alpha) global_secant_alpha = local_secant_alpha;
+        for (int t = 0; t < num_threads; ++t) {
+            if (thread_l_min[t] < global_l_min) global_l_min = thread_l_min[t];
+            if (thread_l_max[t] > global_l_max) global_l_max = thread_l_max[t];
+            if (thread_delta_max[t] > global_delta_max) global_delta_max = thread_delta_max[t];
         }
+
+        *l_min_out = global_l_min;
+        *l_max_out = global_l_max;
+        *delta_max_out = global_delta_max;
+        *secant_alpha_out = global_l_min;
+
+        set_error_success(err);
+        return 0;
+    } catch (const std::exception& e) {
+        set_error_msg(err, 99, e.what());
+        return -99;
+    } catch (...) {
+        set_error_msg(err, 99, "Unknown exception caught");
+        return -99;
     }
-
-    *l_min_out = global_l_min;
-    *l_max_out = global_l_max;
-    *delta_max_out = global_delta_max;
-    *secant_alpha_out = global_secant_alpha;
-
-    set_error_success(err);
-    return 0;
 }
 
 // ============================================================================
-// 8. QSBR SNAPSHOT COPY-OUT (Copia Inmediata a Memoria Privada)
+// 8. QSBR SNAPSHOT COPY-OUT (Safe Memory Copy Guard)
 // ============================================================================
 
 POLYDIM_EXPORT int polydim_cpp_qsbr_snapshot_copy_v900(
@@ -623,28 +690,36 @@ POLYDIM_EXPORT int polydim_cpp_qsbr_snapshot_copy_v900(
     uint8_t* dst,
     size_t* copied_bytes_out,
     PolydimErrorV900* err
-) {
-    if (!src || !dst || !copied_bytes_out) {
-        set_error_msg(err, 1, "Null pointer in cpp_qsbr_snapshot_copy");
-        return -1;
-    }
+) noexcept {
+    try {
+        if (!src || !dst || !copied_bytes_out) {
+            set_error_msg(err, 1, "Null pointer in cpp_qsbr_snapshot_copy");
+            return -1;
+        }
 
-    if (size_bytes > 0) {
-        memcpy(dst, src, size_bytes);
-    }
-    *copied_bytes_out = size_bytes;
+        if (size_bytes > 0) {
+            std::memmove(dst, src, size_bytes);
+        }
+        *copied_bytes_out = size_bytes;
 
-    set_error_success(err);
-    return 0;
+        set_error_success(err);
+        return 0;
+    } catch (const std::exception& e) {
+        set_error_msg(err, 99, e.what());
+        return -99;
+    } catch (...) {
+        set_error_msg(err, 99, "Unknown exception caught");
+        return -99;
+    }
 }
 
 // ============================================================================
-// 9. RETRACCIÓN CAYLEY-STIEFEL MATRIX-FREE VÍA SHERMAN-MORRISON-WOODBURY (SMW)
+// 9. RETRACCIÓN CAYLEY-STIEFEL MATRIX-FREE (Sherman-Morrison-Woodbury)
 // ============================================================================
 
 namespace {
 
-bool solve_linear_system_2k_cpp(int n_sys, int n_rhs, const double* A, const double* B, double* X_sol) {
+bool solve_linear_system_2k_cpp(int n_sys, int n_rhs, const double* A, const double* B, double* X_sol) noexcept {
     int cols = n_sys + n_rhs;
     std::vector<double> aug(n_sys * cols);
     for (int i = 0; i < n_sys; ++i) {
@@ -656,6 +731,14 @@ bool solve_linear_system_2k_cpp(int n_sys, int n_rhs, const double* A, const dou
         }
     }
 
+    double scale_ref = 0.0;
+    for (int i = 0; i < n_sys * n_sys; ++i) {
+        double v = std::abs(A[i]);
+        if (v > scale_ref) scale_ref = v;
+    }
+    if (scale_ref == 0.0) scale_ref = 1.0;
+    double abs_tol = 1e-12 * scale_ref;
+
     for (int i = 0; i < n_sys; ++i) {
         int pivot = i;
         double max_val = std::abs(aug[i * cols + i]);
@@ -666,7 +749,7 @@ bool solve_linear_system_2k_cpp(int n_sys, int n_rhs, const double* A, const dou
                 pivot = r;
             }
         }
-        if (max_val < 1e-15) {
+        if (max_val < abs_tol) {
             return false;
         }
         if (pivot != i) {
@@ -707,152 +790,191 @@ POLYDIM_EXPORT int polydim_cpp_stiefel_cayley_smw_retraction_v900(
     double* y_out,
     double* ortho_error_out,
     PolydimErrorV900* err
-) {
-    if (!x_ptr || !g_ptr || !y_out || !ortho_error_out) {
-        set_error_msg(err, 1, "Null pointer in cpp_stiefel_cayley_smw_retraction");
-        return -1;
-    }
+) noexcept {
+    try {
+        if (!x_ptr || !g_ptr || !y_out || !ortho_error_out) {
+            set_error_msg(err, 1, "Null pointer in cpp_stiefel_cayley_smw_retraction");
+            return -1;
+        }
 
-    if (dim_d == 0 || rank_k == 0) {
-        set_error_msg(err, 2, "dim_d and rank_k must be > 0");
-        return -2;
-    }
+        int64_t d = static_cast<int64_t>(dim_d);
+        int64_t k = static_cast<int64_t>(rank_k);
+        if (d <= 0 || k <= 0 || k > d) {
+            set_error_msg(err, 2, "Invalid dimensions: require 0 < k <= d");
+            return -2;
+        }
 
-    int64_t d = static_cast<int64_t>(dim_d);
-    int64_t k = static_cast<int64_t>(rank_k);
-    int64_t n_sys = 2 * k;
+        if (!std::isfinite(tau)) {
+            set_error_msg(err, 3, "tau is non-finite");
+            return -3;
+        }
 
-    // 1. Calcular bloques KxK: A = X^T G, B = X^T X, C = G^T G
-    std::vector<double> mat_a(k * k, 0.0);
-    std::vector<double> mat_b(k * k, 0.0);
-    std::vector<double> mat_c(k * k, 0.0);
+        // Verificar finitud
+        for (int64_t idx = 0; idx < d * k; ++idx) {
+            if (!std::isfinite(x_ptr[idx]) || !std::isfinite(g_ptr[idx])) {
+                set_error_msg(err, 4, "Non-finite elements in X or G matrix");
+                return -4;
+            }
+        }
 
-    #pragma omp parallel
-    {
-        std::vector<double> local_a(k * k, 0.0);
-        std::vector<double> local_b(k * k, 0.0);
-        std::vector<double> local_c(k * k, 0.0);
+        int64_t n_sys = 2 * k;
 
-        #pragma omp for schedule(static)
+        // 1. Calcular bloques KxK: A = X^T G, B = X^T X, C = G^T G (Sin sección crítica OpenMP)
+        int num_threads = omp_get_max_threads();
+        std::vector<double> thread_a(num_threads * k * k, 0.0);
+        std::vector<double> thread_b(num_threads * k * k, 0.0);
+        std::vector<double> thread_c(num_threads * k * k, 0.0);
+
+        #pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
+            double* la = &thread_a[tid * k * k];
+            double* lb = &thread_b[tid * k * k];
+            double* lc = &thread_c[tid * k * k];
+
+            #pragma omp for schedule(static)
+            for (int64_t row = 0; row < d; ++row) {
+                const double* xr = x_ptr + row * k;
+                const double* gr = g_ptr + row * k;
+                for (int64_t i = 0; i < k; ++i) {
+                    double xi = xr[i];
+                    double gi = gr[i];
+                    for (int64_t j = 0; j < k; ++j) {
+                        la[i * k + j] += xi * gr[j];
+                        lb[i * k + j] += xi * xr[j];
+                        lc[i * k + j] += gi * gr[j];
+                    }
+                }
+            }
+        }
+
+        std::vector<double> mat_a(k * k, 0.0);
+        std::vector<double> mat_b(k * k, 0.0);
+        std::vector<double> mat_c(k * k, 0.0);
+
+        for (int t = 0; t < num_threads; ++t) {
+            const double* la = &thread_a[t * k * k];
+            const double* lb = &thread_b[t * k * k];
+            const double* lc = &thread_c[t * k * k];
+            for (int64_t idx = 0; idx < k * k; ++idx) {
+                mat_a[idx] += la[idx];
+                mat_b[idx] += lb[idx];
+                mat_c[idx] += lc[idx];
+            }
+        }
+
+        // 2. Verificar ortonormalidad de X (X^T X = I_K)
+        double x_defect_sq = 0.0;
+        for (int64_t i = 0; i < k; ++i) {
+            for (int64_t j = 0; j < k; ++j) {
+                double eye = (i == j ? 1.0 : 0.0);
+                double diff = mat_b[i * k + j] - eye;
+                x_defect_sq += diff * diff;
+            }
+        }
+        double x_defect = std::sqrt(x_defect_sq / static_cast<double>(k));
+        if (x_defect > 1e-3) {
+            set_error_msg(err, 5, "Input X is not on Stiefel manifold St(D, K)");
+            return -5;
+        }
+
+        // 3. Construir sistema 2K x 2K: M = I_2K - (tau / 2) * [A, -B; C, -A^T]
+        std::vector<double> mat_m(n_sys * n_sys, 0.0);
+        double half_tau = 0.5 * tau;
+
+        for (int64_t i = 0; i < k; ++i) {
+            for (int64_t j = 0; j < k; ++j) {
+                double eye = (i == j ? 1.0 : 0.0);
+                mat_m[i * n_sys + j] = eye - half_tau * mat_a[i * k + j];
+                mat_m[i * n_sys + (k + j)] = half_tau * mat_b[i * k + j];
+                mat_m[(k + i) * n_sys + j] = -half_tau * mat_c[i * k + j];
+                mat_m[(k + i) * n_sys + (k + j)] = eye + half_tau * mat_a[j * k + i];
+            }
+        }
+
+        // 4. Construir RHS = [B; A^T] de tamaño 2K x K
+        std::vector<double> rhs(n_sys * k, 0.0);
+        for (int64_t i = 0; i < k; ++i) {
+            for (int64_t j = 0; j < k; ++j) {
+                rhs[i * k + j] = mat_b[i * k + j];
+                rhs[(k + i) * k + j] = mat_a[j * k + i];
+            }
+        }
+
+        // 5. Resolver sistema lineal M * Z = RHS
+        std::vector<double> mat_z(n_sys * k, 0.0);
+        if (!solve_linear_system_2k_cpp(static_cast<int>(n_sys), static_cast<int>(k), mat_m.data(), rhs.data(), mat_z.data())) {
+            set_error_msg(err, 6, "Matrix M is singular or ill-conditioned in SMW retraction");
+            return -6;
+        }
+
+        // 6. Reconstruir Y = X + tau * (G * Z1 - X * Z2) de tamaño D x K
+        #pragma omp parallel for schedule(static)
         for (int64_t row = 0; row < d; ++row) {
             const double* xr = x_ptr + row * k;
             const double* gr = g_ptr + row * k;
-            for (int64_t i = 0; i < k; ++i) {
-                double xi = xr[i];
-                double gi = gr[i];
+            double* yr = y_out + row * k;
+
+            for (int64_t col = 0; col < k; ++col) {
+                double sum_g = 0.0;
+                double sum_x = 0.0;
                 for (int64_t j = 0; j < k; ++j) {
-                    local_a[i * k + j] += xi * gr[j];
-                    local_b[i * k + j] += xi * xr[j];
-                    local_c[i * k + j] += gi * gr[j];
+                    sum_g += gr[j] * mat_z[j * k + col];
+                    sum_x += xr[j] * mat_z[(k + j) * k + col];
+                }
+                yr[col] = xr[col] + tau * (sum_g - sum_x);
+            }
+        }
+
+        // 7. Computar error de ortonormalidad de salida: ||Y^T Y - I_K||_F / sqrt(K)
+        std::vector<double> thread_yty(num_threads * k * k, 0.0);
+        #pragma omp parallel
+        {
+            int tid = omp_get_thread_num();
+            double* lyty = &thread_yty[tid * k * k];
+            #pragma omp for schedule(static)
+            for (int64_t row = 0; row < d; ++row) {
+                const double* yr = y_out + row * k;
+                for (int64_t i = 0; i < k; ++i) {
+                    double yi = yr[i];
+                    for (int64_t j = 0; j < k; ++j) {
+                        lyty[i * k + j] += yi * yr[j];
+                    }
                 }
             }
         }
 
-        #pragma omp critical
-        {
+        std::vector<double> yty(k * k, 0.0);
+        for (int t = 0; t < num_threads; ++t) {
+            const double* lyty = &thread_yty[t * k * k];
             for (int64_t idx = 0; idx < k * k; ++idx) {
-                mat_a[idx] += local_a[idx];
-                mat_b[idx] += local_b[idx];
-                mat_c[idx] += local_c[idx];
+                yty[idx] += lyty[idx];
             }
         }
-    }
 
-    // 2. Construir sistema 2K x 2K: M = I_2K - (tau / 2) * [A, -B; C, -A^T]
-    //    M = [ I_K - (tau/2)*A,       (tau/2)*B     ]
-    //        [ -(tau/2)*C,       I_K + (tau/2)*A^T  ]
-    std::vector<double> mat_m(n_sys * n_sys, 0.0);
-    double half_tau = 0.5 * tau;
-
-    for (int64_t i = 0; i < k; ++i) {
-        for (int64_t j = 0; j < k; ++j) {
-            double eye = (i == j ? 1.0 : 0.0);
-            // Top-left: I - (tau/2)*A
-            mat_m[i * n_sys + j] = eye - half_tau * mat_a[i * k + j];
-            // Top-right: (tau/2)*B
-            mat_m[i * n_sys + (k + j)] = half_tau * mat_b[i * k + j];
-            // Bottom-left: -(tau/2)*C
-            mat_m[(k + i) * n_sys + j] = -half_tau * mat_c[i * k + j];
-            // Bottom-right: I + (tau/2)*A^T
-            mat_m[(k + i) * n_sys + (k + j)] = eye + half_tau * mat_a[j * k + i];
-        }
-    }
-
-    // 3. Construir RHS = [B; A^T] de tamaño 2K x K
-    std::vector<double> rhs(n_sys * k, 0.0);
-    for (int64_t i = 0; i < k; ++i) {
-        for (int64_t j = 0; j < k; ++j) {
-            rhs[i * k + j] = mat_b[i * k + j];
-            rhs[(k + i) * k + j] = mat_a[j * k + i]; // A^T
-        }
-    }
-
-    // 4. Resolver sistema lineal M * Z = RHS
-    std::vector<double> mat_z(n_sys * k, 0.0);
-    if (!solve_linear_system_2k_cpp(static_cast<int>(n_sys), static_cast<int>(k), mat_m.data(), rhs.data(), mat_z.data())) {
-        set_error_msg(err, 3, "Matrix M is singular or ill-conditioned in SMW retraction");
-        return -3;
-    }
-
-    // 5. Reconstruir Y = X + tau * (G * Z1 - X * Z2) de tamaño D x K
-    #pragma omp parallel for schedule(static)
-    for (int64_t row = 0; row < d; ++row) {
-        const double* xr = x_ptr + row * k;
-        const double* gr = g_ptr + row * k;
-        double* yr = y_out + row * k;
-
-        for (int64_t col = 0; col < k; ++col) {
-            double sum_g = 0.0;
-            double sum_x = 0.0;
+        double frob_sq = 0.0;
+        for (int64_t i = 0; i < k; ++i) {
             for (int64_t j = 0; j < k; ++j) {
-                sum_g += gr[j] * mat_z[j * k + col];
-                sum_x += xr[j] * mat_z[(k + j) * k + col];
-            }
-            yr[col] = xr[col] + tau * (sum_g - sum_x);
-        }
-    }
-
-    // 6. Computar error de ortonormalidad de salida: ||Y^T Y - I_K||_F / sqrt(K)
-    std::vector<double> yty(k * k, 0.0);
-    #pragma omp parallel
-    {
-        std::vector<double> local_yty(k * k, 0.0);
-        #pragma omp for schedule(static)
-        for (int64_t row = 0; row < d; ++row) {
-            const double* yr = y_out + row * k;
-            for (int64_t i = 0; i < k; ++i) {
-                double yi = yr[i];
-                for (int64_t j = 0; j < k; ++j) {
-                    local_yty[i * k + j] += yi * yr[j];
-                }
+                double eye = (i == j ? 1.0 : 0.0);
+                double diff = yty[i * k + j] - eye;
+                frob_sq += diff * diff;
             }
         }
+        *ortho_error_out = std::sqrt(frob_sq / static_cast<double>(k));
 
-        #pragma omp critical
-        {
-            for (int64_t idx = 0; idx < k * k; ++idx) {
-                yty[idx] += local_yty[idx];
-            }
-        }
+        set_error_success(err);
+        return 0;
+    } catch (const std::exception& e) {
+        set_error_msg(err, 99, e.what());
+        return -99;
+    } catch (...) {
+        set_error_msg(err, 99, "Unknown exception caught");
+        return -99;
     }
-
-    double frob_sq = 0.0;
-    for (int64_t i = 0; i < k; ++i) {
-        for (int64_t j = 0; j < k; ++j) {
-            double eye = (i == j ? 1.0 : 0.0);
-            double diff = yty[i * k + j] - eye;
-            frob_sq += diff * diff;
-        }
-    }
-    *ortho_error_out = std::sqrt(frob_sq / static_cast<double>(k));
-
-    set_error_success(err);
-    return 0;
 }
 
-
 // ============================================================================
-// 10. COTA ASINTÓTICA RIEMANNIANA DE DRIFT CLIFFORD (Higham 2002 / SOTA 2026)
+// 10. COTA ASINTÓTICA RIEMANNIANA DE DRIFT CLIFFORD (Higham 2002)
 // ============================================================================
 
 POLYDIM_EXPORT int polydim_cpp_clifford_drift_bound_v900(
@@ -864,34 +986,42 @@ POLYDIM_EXPORT int polydim_cpp_clifford_drift_bound_v900(
     double* reorth_bound_out,
     uint8_t* is_safe_under_1e8_out,
     PolydimErrorV900* err
-) {
-    if (!unconditioned_bound_out || !reorth_bound_out || !is_safe_under_1e8_out) {
-        set_error_msg(err, 1, "Null pointer in cpp_clifford_drift_bound");
-        return -1;
+) noexcept {
+    try {
+        if (!unconditioned_bound_out || !reorth_bound_out || !is_safe_under_1e8_out) {
+            set_error_msg(err, 1, "Null pointer in cpp_clifford_drift_bound");
+            return -1;
+        }
+
+        if (dim_d == 0 || num_reflections_m == 0) {
+            set_error_msg(err, 2, "dim_d and num_reflections_m must be > 0");
+            return -2;
+        }
+
+        double d = static_cast<double>(dim_d);
+        double m = static_cast<double>(num_reflections_m);
+        double emach = (eps_mach > 0.0) ? eps_mach : 2.220446049250313e-16;
+        const double c_const = 2.0;
+
+        double unconditioned = c_const * m * std::sqrt(d) * emach;
+
+        double k_step = std::clamp(static_cast<double>(reorth_interval_k), 1.0, m);
+        double num_blocks = std::ceil(m / k_step);
+        double block_drift = c_const * k_step * std::sqrt(d) * emach;
+        double qr_drift = 2.0 * std::sqrt(d) * emach;
+        double reorth = num_blocks * qr_drift + block_drift;
+
+        *unconditioned_bound_out = unconditioned;
+        *reorth_bound_out = reorth;
+        *is_safe_under_1e8_out = (reorth < 1e-8) ? 1 : 0;
+
+        set_error_success(err);
+        return 0;
+    } catch (const std::exception& e) {
+        set_error_msg(err, 99, e.what());
+        return -99;
+    } catch (...) {
+        set_error_msg(err, 99, "Unknown exception caught");
+        return -99;
     }
-
-    if (dim_d == 0 || num_reflections_m == 0) {
-        set_error_msg(err, 2, "dim_d and num_reflections_m must be > 0");
-        return -2;
-    }
-
-    double d = static_cast<double>(dim_d);
-    double m = static_cast<double>(num_reflections_m);
-    double emach = (eps_mach > 0.0) ? eps_mach : 2.220446049250313e-16;
-    const double c_const = 2.0;
-
-    double unconditioned = c_const * m * std::sqrt(d) * emach;
-
-    double k_step = std::clamp(static_cast<double>(reorth_interval_k), 1.0, m);
-    double num_blocks = std::ceil(m / k_step);
-    double block_drift = c_const * k_step * std::sqrt(d) * emach;
-    double qr_drift = 2.0 * std::sqrt(d) * emach;
-    double reorth = num_blocks * qr_drift + block_drift;
-
-    *unconditioned_bound_out = unconditioned;
-    *reorth_bound_out = reorth;
-    *is_safe_under_1e8_out = (reorth < 1e-8) ? 1 : 0;
-
-    set_error_success(err);
-    return 0;
 }
