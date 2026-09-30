@@ -1,5 +1,5 @@
 {
-  "last_probe_timestamp": "2026-09-28 23:23:55",
+  "last_probe_timestamp": "2026-09-30 10:01:52",
   "providers": {
     "cerebras_wse": {
       "status": "ONLINE",
@@ -15,17 +15,17 @@
       "status": "ONLINE",
       "provider": "Groq LPU",
       "models": [
-        "canopylabs/orpheus-v1-english",
-        "openai/gpt-oss-20b",
-        "whisper-large-v3-turbo",
-        "canopylabs/orpheus-arabic-saudi",
-        "meta-llama/llama-prompt-guard-2-86m",
-        "whisper-large-v3",
-        "qwen/qwen3.8-27b",
-        "meta-llama/llama-prompt-guard-2-22m",
         "openai/gpt-oss-safeguard-20b",
+        "canopylabs/orpheus-arabic-saudi",
         "openai/gpt-oss-120b",
-        "allam-2-7b"
+        "meta-llama/llama-prompt-guard-2-22m",
+        "qwen/qwen3.8-27b",
+        "whisper-large-v3",
+        "canopylabs/orpheus-v1-english",
+        "meta-llama/llama-prompt-guard-2-86m",
+        "allam-2-7b",
+        "whisper-large-v3-turbo",
+        "openai/gpt-oss-20b"
       ],
       "sota_llama": null,
       "sota_deepseek": null
@@ -33,7 +33,7 @@
     "openrouter_gateway": {
       "status": "ONLINE",
       "provider": "OpenRouter Gateway",
-      "total_models": 460,
+      "total_models": 464,
       "sota_qwen_cloud": "qwen/qwen3.8-max-prime",
       "sota_deepseek_cloud": "~deepseek/deepseek-pro-latest"
     }
