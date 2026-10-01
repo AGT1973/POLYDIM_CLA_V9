@@ -564,3 +564,356 @@ El documento `Evaluación científica.md` ha sido analizado e ingerido. Las prin
 ## Ruta SOTA recomendada
 
 > Documento de 150KB vectorizado. Requiere refactorización total a pybind11/nanobind y FGMRES (Flexible GMRES).
+
+
+## INGESTA SOTA V912 (Diagnóstico de Precisión Mixta, DLPack y E-Process Martingales)
+## Diagnóstico
+## Estructura algebraica
+## Qué debe hacer FGMRES
+### Aplicación al caso Cayley
+## Precondicionador Woodbury recomendado
+### Elección de $P$
+## Reducción adicional de rango
+## Estrategia híbrida recomendada
+### Fase 1: operador matrix-free
+### Fase 2: FGMRES reiniciado
+### Fase 3: Woodbury reutilizable
+### Fase 4: control inexacto
+## Alternativas SOTA
+### 1. Newton-Krylov truncado
+### 2. Recycling FGMRES
+### 3. Deflation
+### 4. Multi-preconditioning
+### 5. Iteración fija de Cayley
+## Complejidad esperada
+## Plan de implementación
+### Prioridad P0
+### Prioridad P1
+### Prioridad P2
+### Validación científica
+## Recomendación final
+# Produndiza el tema buscando mejoras y soluciones cientificas SOTA
+## 1. Reformulación correcta de Cayley
+## 2. Qué parte debe ser iterativa
+### Caso A: sistema reducido pequeño
+### Caso B: $K$ grande o sistema ampliado implícito
+## 3. Precondicionador Woodbury de nivel avanzado
+### Mejoras relevantes
+#### Compresión adaptativa
+#### Precondicionador espectral
+#### Precondicionador compuesto
+## 4. FGMRES con precondicionamiento inexacto
+## 5. Recycling y deflación
+## 6. Ortogonalización: posible cuello de botella oculto
+## 7. Precisión mixta
+## 8. Newton–Krylov truncado
+## 9. Alternativas a FGMRES
+### Cayley directa de Wen–Yin
+### BiCGSTAB o IDR(s)
+### MINRES
+### Iteración fija
+### Multigrid o domain decomposition
+## 10. Diseño de software
+## 11. Complejidad refinada
+### Preprocesamiento
+### Cada aplicación de operador
+### Cada ciclo FGMRES
+### Memoria
+## 12. Plan experimental SOTA
+## Recomendación concreta
+# 2. Cadena de Herramientas de Compilación (pybind11 Incompleto) evalua mejoras y soluciones cientificas SOTA
+## Diagnóstico del fallo
+### Error `cannot find .2`
+### Flag `-msse4.2`
+## Arquitectura recomendada
+### Núcleo C++
+### Binding
+### Frontend Python
+## CMakeLists.txt recomendado
+## Configuración Windows
+### Visual Studio
+### CMake Visual Studio
+## Backend de empaquetado recomendado
+## Cuándo usar setuptools
+### Elección
+## ABI, versiones y distribución
+## Seguridad del binding
+### Excepciones
+### Validación de arrays
+### GIL
+### Ownership
+## SIMD y optimización
+## CMake Presets
+## CI científico y reproducible
+## Protocolo de diagnóstico
+## Plan de migración V911
+### Fase 1: estabilizar el núcleo
+### Fase 2: binding seguro
+### Fase 3: empaquetado
+### Fase 4: rendimiento
+### Fase 5: CI y distribución
+## Diagnóstico final
+# Produndiza el tema buscando mejoras y soluciones cientificas SOTA
+## 1. Decisión arquitectónica
+## 2. Estructura de proyecto
+# src/v911/__init__.py
+## 3. `pyproject.toml` robusto
+## 4. CMake moderno y portátil
+## 5. Solución específica al error `.2`
+## 6. SIMD y ABI
+## 7. pybind11 frente a nanobind
+## 8. Diseño de la frontera Python-C++
+#include <pybind11/pybind11.h>
+#include <pybind11/numpy.h>
+## 9. ABI estable: cuándo usar `abi3`
+## 10. Wheels reproducibles
+## 11. Reproducibilidad científica
+## 12. Testing en cuatro niveles
+### Importación
+### Equivalencia de backends
+### Seguridad de memoria
+### Propiedades numéricas
+## 13. Observación sobre Python 3.13 free-threaded
+## 14. Meson como alternativa
+## 15. Plan final de Fase 2
+### Fase 2A: eliminar el fallo actual
+### Fase 2B: empaquetado moderno
+### Fase 2C: robustez científica
+### Fase 2D: distribución
+### Fase 2E: optimización avanzada
+## Conclusión
+# 3. Falta de Zero-Copy Inter-Device (DLPack) evalua mejoras y soluciones cientificas SOTA
+## 1. Corrección conceptual
+### Lo que DLPack sí elimina
+### Lo que DLPack no elimina
+## 2. Dos niveles de integración
+### Nivel N1: protocolo Python
+### Nivel N0: C Exchange API
+## 3. Importación segura en C++
+### Cabecera
+#include <dlpack/dlpack.h>
+### Descriptor interno
+### Validación
+## 4. Ownership y deleter
+## 5. Stream semantics: el punto crítico
+### CUDA
+### ROCm/HIP
+### Buen contrato
+## 6. Implementación Python de fallback
+## 7. C Exchange API como evolución
+## 8. Integración CUDA/ROCm sin acoplarse a PyTorch
+## 9. PyTorch: extensión acoplada o backend independiente
+### Extensión PyTorch
+### Backend independiente vía DLPack
+## 10. Rust y FFI
+#[repr(C)]
+#[repr(C)]
+#[repr(C)]
+## 11. Cero copia no significa autograd
+## 12. Layouts y restricciones reales
+### Fast path
+### General path
+## 13. Dtypes modernos
+## 14. Interoperabilidad HBM3 y host
+## 15. Integración con FGMRES matrix-free
+### Operaciones críticas
+## 16. CUDA Graphs y C Exchange
+## 17. Benchmark correcto
+## 18. Pruebas de correctness
+### Alias
+### Lifetime
+### Streams
+### Dispositivos
+### Strides
+### Deleters
+## 19. Roadmap de implementación
+### Fase 1: DLPack Python N1
+### Fase 2: salida zero-copy
+### Fase 3: C Exchange N0
+### Fase 4: GPU-resident Krylov
+### Fase 5: Rust
+### Fase 6: custom operator
+## Recomendación final
+# Produndiza el tema buscando mejoras y soluciones cientificas SOTA
+## 1. Corrección de la arquitectura
+## 2. DLPack versionado
+## 3. Fast path N0
+### Dos funciones distintas
+#### `dltensor_from_py_object_no_sync`
+#### `managed_tensor_from_py_object_no_sync`
+## 4. Stream semantics exactas
+## 5. Sincronización: tres políticas
+### Política A: same-stream
+### Política B: event handoff
+### Política C: host synchronization
+## 6. Read-only y mutabilidad
+## 7. Autograd y aliasing
+## 8. FGMRES completamente residente en GPU
+### Reducciones
+## 9. Woodbury en GPU
+## 10. CUDA Graphs y captura
+## 11. Multi-GPU y HBM3
+## 12. Rust: arquitectura segura
+## 13. Versiones y compatibilidad
+## 14. Alternativas SOTA a DLPack
+### PyTorch custom operator
+### CUDA Array Interface
+### C++ ATen/LibTorch
+### Apache Arrow CUDA buffers
+### TVM FFI / interfaces similares
+## 15. Benchmark científico
+## 16. Plan de implementación actualizado
+### Fase A: contrato DLPack
+### Fase B: fast path N0
+### Fase C: backend GPU
+### Fase D: solver residente
+### Fase E: Rust
+## Recomendación final
+# 4. Precisión Mixta Dinámica (Refinamiento Ausente) evalua mejoras y soluciones cientificas SOTA
+## 1. Modelo correcto de precisión
+## 2. Algoritmo GMRES-IR para V911
+# convertir y acumular: \[ x\_{k+1}^{(64)}
+## 3. BF16 frente a FP16
+### BF16
+### FP16
+### Recomendación
+## 4. Tensor Cores correctamente
+## 5. Arnoldi mixto: qué puede bajar de precisión
+## 6. Ortogonalización estable
+## 7. Residual verdadero y backward error
+## 8. Escalado adaptativo
+## 9. Precondicionador Woodbury mixto
+## 10. Precisión dinámica basada en síntomas
+### Estado `FAST`
+### Estado `GUARDED`
+### Estado `RECOVERY`
+## 11. Criterio de estancamiento
+## 12. Cinco precisiones para V911
+## 13. Refinamiento externo con corrección fiable
+## 14. FP8: no como primera fase
+## 15. Tensor Core y memoria
+## 16. FGMRES y precondicionador variable
+## 17. Solver reducido de Woodbury
+## 18. Métricas de validación
+### Lineales
+### Geométricas
+### Algorítmicas
+### Hardware
+## 19. Plan concreto de implementación
+### Etapa 1: baseline
+### Etapa 2: FP32 inner
+### Etapa 3: Tensor Core
+### Etapa 4: precisión adaptativa
+### Etapa 5: GPU-resident
+## Recomendación final
+# Produndiza el tema buscando mejoras y soluciones cientificas SOTA
+## 1. Diseño recomendado
+## 2. El punto crítico: condición espectral
+## 3. Política adaptativa de precisión
+### Estado FAST
+### Estado GUARDED
+### Estado RECOVERY
+## 4. Precisión por bucket
+## 5. Tensor Cores: uso correcto
+## 6. Escalado y redondeo adaptativo
+## 7. Stochastic rounding
+## 8. Arnoldi y reinicios fiables
+## 9. Acceptance test del ciclo
+## 10. Refinamiento de la geometría Stiefel
+## 11. Woodbury y refinamiento interno
+## 12. Precisión adaptativa del precondicionador
+## 13. Cinco precisiones ampliadas con FP8
+## 14. CPU frente a GPU
+### CPU AVX2/AVX-512
+### GPU Tensor Cores/Matrix Cores
+## 15. Métrica científica correcta
+## 16. Benchmark experimental
+## 17. Implementación mínima
+## Recomendación final
+# 5. Martingalas Conformes en Detección (CliffordNet) evalua mejoras y soluciones cientificas SOTA
+## 1. Qué debe detectar CliffordNet
+## 2. BOCPD: capa de inferencia de régimen
+## 3. Martingala conforme: capa de garantía
+## 4. Log-martingala para estabilidad numérica
+## 5. Combinación BOCPD–martingala
+### Capa certificada
+### Capa BOCPD
+## 6. Régimen transitorio y momentum
+### Residualizar momentum
+### Score de innovación
+### Calibración por contexto
+## 7. Weighted conformal martingales
+## 8. Recalibración sin destruir la garantía
+## 9. Detector híbrido en tres tiempos
+### Rápida
+### Intermedia
+### Lenta
+## 10. Hazard adaptativo de BOCPD
+## 11. Modelos predictivos dentro de BOCPD
+## 12. Conformalización de modelos neuronales
+## 13. Dependencia temporal
+### Bloques
+### Residuales prewhitened
+### Conformal martingale bajo dependencia débil
+### e-process robusto
+## 14. Control de falsos positivos por alarma y por tiempo
+### E-value combinado
+### Unión de alarmas
+### FDR online
+## 15. No confundir detección con acción
+## 16. Algoritmo propuesto
+## 17. Umbrales recomendados
+## 18. Evaluación científica
+### Detección
+### Calibración
+### Utilidad
+## 19. Límites teóricos que deben documentarse
+### Garantía fuerte
+### Garantía condicionada
+### Garantía empírica
+## Recomendación final
+# Produndiza el tema buscando mejoras y soluciones cientificas SOTA
+## 1. Cambiar el objetivo estadístico
+## 2. Arquitectura estadística recomendada
+## 3. Por qué la martingala estándar puede ser insuficiente
+## 4. E-process frente a p-value martingale
+## 5. Detector de cambio óptimo por mixtures
+## 6. WCTM para el drift del optimizador
+## 7. Dependencia temporal: no usar conformal IID directamente
+### Innovaciones
+### Bloques
+### Guard bands
+### Garantía degradada explícita
+## 8. Residualización avanzada de momentum
+## 9. BOCPD con modelos robustos
+## 10. BOCPD no debe certificar por sí solo
+## 11. Control de múltiples canales
+## 12. Optimización del retardo
+## 13. Política de reinicio correcta
+## 14. Clasificar el cambio
+## 15. Implementación recomendada
+## 16. Plan experimental
+## 17. Recomendación final
+# Produndiza el tema buscando mejoras y soluciones cientificas SOTA
+## 1. Redefinir la alarma
+## 2. Score correcto para momentum
+## 3. WCTM y clasificación del drift
+## 4. Fixed-reference frente a calibración adaptativa
+### Detector conservador
+### Detector adaptativo
+## 5. E-detector optimizado para detección
+## 6. BOCPD con Student-$t$ y run-length truncado
+## 7. Dependencia temporal y validez
+## 8. Control de falsas alarmas con reinicios
+## 9. Control de múltiples señales
+## 10. Política de acción con histéresis
+## 11. Detector multiescala
+## 12. Garantía operacional
+### Garantía exacta
+### Garantía ponderada
+### Rendimiento empírico
+## 13. Benchmark mínimo
+## 14. Implementación recomendada
+## Recomendación final
+
+> Documento Diagnóstico pesado vectorizado. Blueprint teórico para V912 consolidado.

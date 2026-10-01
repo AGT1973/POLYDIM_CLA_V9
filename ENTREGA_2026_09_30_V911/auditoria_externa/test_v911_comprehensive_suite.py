@@ -248,7 +248,6 @@ def run_all_tests():
         sys.path.append(r'E:\POLYDIM_EINSOF\ENTREGA_2026_09_30_V911')
         import polydim_pybind_v911
         print("[TEST 15/15] PyBind11 SOTA Binding (Dual-Run)...")
-        import numpy as np
         mat = np.random.randn(10, 10).astype(np.float64)
         out, rms = polydim_pybind_v911.PolydimPybindV911().auon_rms_normalize(mat)
         print("  -> PASS: PyBind11 Memory Pool & Binding operational.")

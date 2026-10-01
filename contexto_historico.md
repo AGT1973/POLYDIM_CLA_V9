@@ -1,18 +1,16 @@
-# Contexto Histórico Operativo V906
 
-## 1. Estado Actual (2026-09-30)
-El ciclo de auditoría y certificación física de POLYDIM V906 ha concluido exitosamente.
-- **Exit Code 0** en todos los 14 tests y 4 fuzzing hounds.
-- **Ubicación:** `E:\POLYDIM_EINSOF\ENTREGA_2026_09_30_V906\`
-- **Artefactos:** Los 16 hallazgos detectados en V905 por el Red Team Bulldog han sido parchados, certificados, y entregados (ver `v906_audit_findings.md` y `readme_first.md`).
+# Contexto Histórico - POLYDIM EINSOF (Checkpoint V911 -> V912)
 
-## 2. Acciones Pendientes para el Agente Re-enganchado
-Esta sesión fue abortada por la política Anti-Token Explosion (Regla 13) debido al alto consumo de contexto.
-El Agente que tome este hilo debe:
-1. Leer `PERMANENT_MEMORY.md` (Regla 0 obligatoria).
-2. Verificar la completitud de la carpeta V906 en disco.
-3. Evaluar con el usuario Ariel si la siguiente fase (V907) requiere:
-   a) Nueva ingesta teórica (Activar Regla 19).
-   b) Refactorización arquitectónica mayor (e.g. integrar ROCm / TPU).
-   c) Push de código a GitHub (origin V900).
-4. Proceder con el comando o workflow dictado por el usuario, sin recalcular nada de lo anterior.
+**Estado Operativo:**
+- **V911 Certificada (Fase 1 Dual-Run):** Implementa el monitor SOTATelemetryDriftMonitor (CUSUM/EWMA) en Python y el prototipo base C++ para pybind11 (polydim_pybind_v911.cpp), coexistiendo con ctypes.
+- Tests físicos y Fuzz hounds: PASSED 14/14 (Exit Code 0).
+- Backups en Git (V900 branch) y GDrive (I:\Mi unidad\POLYDIM_BACKUP) asegurados.
+
+**Staging Teórico Consolidado (Hoja de Ruta V912):**
+Se ingirió Propuesta para V909.md y Diagnóstico.md. La refactorización exigida (Nivel 3) consta de:
+1. **FGMRES Matrix-Free & Precisión Mixta:** Solver GPU-resident con iteración Arnoldi en BF16/FP16 y refinamiento iterativo en FP64, usando la Identidad de Woodbury explícita (sin armar  	imes 2K$).
+2. **DLPack / PyBind11 (Zero-Copy):** Abandono definitivo de ctypes. Intercambio de tensores HBM3 directo vía dlpack.h (Nivel 0 C Exchange API).
+3. **E-Process Conformal Martingales:** Reemplazo del CUSUM estático por BOCPD acoplado a Martingalas Conformes (E-values) para detección topológica rigurosa.
+
+**Siguiente Acción Esperada:**
+Ejecución de la migración V912 (Fase 2) que reconstruirá el puente compilado y la arquitectura de Krylov.
