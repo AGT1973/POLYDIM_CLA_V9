@@ -1033,3 +1033,75 @@ Para una secuencia de scores de no-conformidad $s_t$ calculados sobre la distanc
 3. Por la desigualdad maximal de Ville para supermartingalas no negativas con $E_0 = 1$:
    $$\mathbb{P}\left(\exists t \ge 1 : E_t \ge \frac{1}{\alpha}\right) \le \alpha$$
 Garantizando matemáticamente que la tasa de falsas alarmas ante regímenes estacionarios nunca exceda $\alpha$ independientemente de la longitud de la secuencia temporal.
+
+
+# ============================================================================
+# SÍNTESIS CIENTÍFICA & BLUEPRINT CONSOLIDADO SOTA V913 (6 CAPAS AUDITADAS)
+# Fecha: 2026-10-01 | Cumplimiento Regla 4 Local & Regla 19 Global
+# ============================================================================
+
+## 1. Capa 1: Álgebra Lineal Numérica & Variedades Stiefel
+- **Newton Basis con Puntos de Leja:** Sustitución de base monómica en Arnoldi s-step por polinomios interpoladores de Newton w_j = (A - theta_j I) w_{j-1}, acotando kappa(W_k) <= 10^2 independientemente de D.
+- **ShiftedCholQR3 / TSQR:** Factorización QR en 1 sola reducción global de comunicación con shift adaptativo alpha = sqrt(D) * eps_mach * ||A_k^T A_k||_F para matrices tall-skinny.
+- **Retracción de Newton-Schulz de Orden 5:** Proyección isométrica pura Q_{k+1} = 0.5 * Q_k (3 I_K - Q_k^T Q_k) con convergencia cuadrática y cero divisiones o inversiones matriciales.
+
+## 2. Capa 2: Transporte Zero-Copy, IPC & C Exchange API (DLPack Nivel 0)
+- **Ring Buffer MPMC de Descriptores (Vyukov):** Separación estricta entre transporte de descriptores de 64 bytes y slots de datos masivos (80 MB). Sincronización libre de locks mediante stores release y loads acquire sobre contadores de secuencia.
+- **Reclamación de Memoria por Épocas con Resistencia a Fallos (EBR / QSBR):** Watchdogs de Heartbeat y sondas de liveness (pidfd en Linux, OpenProcess en Windows) para revocar leases de procesos caídos sin bloquear la época global.
+- **Sincronización Asíncrona de Streams GPU:** Callback deleter de DLPack desacoplado mediante eventos CUDA/ROCm y sondeo no bloqueante en hilo secundario.
+
+## 3. Capa 3: Inferencia Estadística, Deriva Topológica & Martingalas Conformes
+- **Log-Martingala con log1p:** Recursión ell_t = ell_{t-1} + log1p(lambda_t G_t) en FP64 puro, eliminando desbordamientos a +Infinity.
+- **Apuesta Predecible Óptima (OGD):** Actualización de lambda_t in F_{t-1} mediante Online Gradient Descent maximizando la tasa de Kelly sin fuga de información del futuro.
+- **BOCPD Truncado Student-t:** Poda de longitudes de corrida a K_max = 50 con estadísticos conjugados Normal-Gamma Inverso.
+- **Transporte Paralelo Intrínseco en S^{D-1}:** Diferenciación covariante de gradientes riemannianos para aislar la aceleración del giro coordenado.
+
+## 4. Capa 4: Topología de Grafos, Búsqueda Vecinal & Álgebras de Clifford
+- **Homología Simplicial Dispersa sobre GF(2):** Representación CSC con listas ordenadas de índices, diferencia simétrica O(|R_j| + |R_k|), optimización de Clearing (Bauer/Ripser) y poda de Apparent Pairs.
+- **HNSW Concurrente Lock-Free:** Snapshots Copy-on-Write de listas de adyacencia con atomic pointer swap y optimistic lock coupling.
+- **CliffordBlade256 Vectorizado:** Representación de hojas en 256 bits (4x uint64) con evaluación de signo canónico por popcounts cruzados multi-lane sin saltos condicionales.
+
+## 5. Capa 5: Aritmética de Silicio, SIMD & FPU Hardening
+- **Modos de Hardware FTZ & DAZ:** Control directo del registro MXCSR (_MM_FLUSH_ZERO_ON / _MM_DENORMALS_ZERO_ON) al inicializar hilos, eliminando penalizaciones microcódigo por subnormales.
+- **Unidades de Traducción Estrictas para Kahan:** Compilación modular con -fno-associative-math y barreras de compilador para evitar la eliminación de términos correctores.
+
+## 6. Capa 6: Concurrencia Masiva & Optimización NUMA
+- **Aislamiento de Líneas de Caché (Anti-False Sharing):** Estructuras POD alineadas estrictamente a 64 bytes (alignas(64)) con padding entre slots de productores y consumidores.
+- **Asignación First-Touch & Thread Pinning:** Inicialización de memoria en la región paralela y fijación de afinidad de hilos por socket NUMA.
+
+
+# ============================================================================
+# SÍNTESIS CIENTÍFICA & BLUEPRINT CONSOLIDADO SOTA V915 (PRODUCCIÓN SERIE 900)
+# Fecha: 2026-10-01 | Cumplimiento Regla 4 Local & Regla 19 Global
+# ============================================================================
+
+## 1. Retracción Polar Newton-Schulz de Orden 5 con Pre-Escalado Espectral Dual
+- **Polinomio de Contracción de 5to Orden:**
+  X_{k+1} = X_k \left(\frac{15}{8} I_K - \frac{5}{4} X_k^\top X_k + \frac{3}{8} (X_k^\top X_k)^2\right)
+- **Radio de Atracción Universal:** Basin de convergencia  \in (0, \sqrt{3})$.
+- **Cota Espectral Dual Determinista:**
+  \lambda_{\text{Gersh}} = \max_{1 \le i \le K} \sum_{j=1}^K |(Y^\top Y)_{ij}|, \quad \lambda_{\text{Frob}} = \sqrt{\sum_{i,j} (Y^\top Y)_{ij}^2}
+  \widehat{\lambda} = \min(\lambda_{\text{Gersh}}, \lambda_{\text{Frob}}, 1.15 \cdot \lambda_{\text{pow}})
+  Factor de pre-escalado de seguridad: $\alpha = 1 / \sqrt{1.05 \cdot \max(\widehat{\lambda}, 10^{-12})}$.
+  Garantiza (\alpha Y) \le 1 / \sqrt{1.05} \approx 0.9759 < \sqrt{3}$, induciendo contracción monótona hacia la variedad de Stiefel (\mathbb{R}^D)$.
+
+## 2. Álgebras de Clifford Cl(p, q) con Búferes en Stack (W)$
+- **Representación Compacta:** CliffordBlade256 con 4 palabras uint64_t w[4] y búfer de sumas de prefijos en stack uint32_t P_B[4] (cero asignaciones dinámicas en hot path).
+- **Paridad de Cruces Inter-Palabra e Intra-Palabra:**
+  \text{inv}(A, B) = \sum_{w=0}^{W-1} \text{popcount}(A[w]) \cdot P_B[w-1] + \text{intra\_word\_inv}(A[w], B[w])
+  Evaluado en L1 Cache con SIMD/Popcount nativo sin saltos condicionales.
+
+## 3. Martingalas Conformes de Ville en Log-Espacio con 64::ln_1p
+- **Recursión en Log-Espacio:** $\ell_t = \ell_{t-1} + \ln(1 + \lambda_t (S_t - \mu_t))$ usando u.ln_1p() nativo en Rust.
+- **Resistencia a Subnormales y Desbordamientos:** Preservación de precisión en ^{-308}$ y saturación estable.
+- **Discounted Online Gradient Descent (D-OGD):**
+  \widetilde{G}_t = \gamma \widetilde{G}_{t-1} + (1-\gamma) \frac{S_t - \mu_t}{1 + \lambda_t (S_t - \mu_t)}, \quad \lambda_{t+1} = \Pi_{[0, 1-\epsilon]}(\lambda_t + \eta_0 \widetilde{G}_t)
+  con $\gamma = 0.98, \eta_0 = 0.08$.
+
+## 4. Espacio de Trabajo Krylov Pre-Alocado para FGMRES =10^7$
+- **Zero-Allocation Hot Path:** Estructura FGMRESWorkspace persistente con , Z, H, r_0, c, s, y$ prealocados una sola vez en el heap y reutilizados en todos los ciclos y reinicios.
+- **Doble Modified Gram-Schmidt (MGS-2):** Pérdida de ortogonalidad acotada a $\|V_m^\top V_m - I_m\| \le 10^{-14}$.
+
+## 5. Transporte Tensorial Zero-Copy & CUDA IPC Versionado
+- **Descriptor Versionado:** PmtpSharedSlabDescriptor con generación, UUID de proceso, conteo de referencias y transiciones atómicas.
+- **Reclamación Segura:** Evita use-after-free o bloqueos huérfanos de VRAM ante desconexión abrupta de consumidores.
