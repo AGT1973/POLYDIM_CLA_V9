@@ -1,7 +1,7 @@
-//! kernel_rust_v906.rs
-//! Kernel Topológico y Guardián Numérico Rust POLYDIM V906 (Master Industrial Release)
+//! kernel_rust_v907.rs
+//! Kernel Topológico y Guardián Numérico Rust POLYDIM v907 (Master Industrial Release)
 //! 
-//! # Alcance y Fundamentación Matemática V906:
+//! # Alcance y Fundamentación Matemática v907:
 //! 
 //! POLYDIM opera directamente en el espacio continuo de variedades latentes de alta dimensión ($S^{D-1}$).
 //! 
@@ -13,7 +13,7 @@
 //! 5. **Cota de Manifold Secant RIP (Baraniuk–Wakin) & Estimador Multi-K Two-NN:** Verificación en runtime de dimensión intrínseca $d_A$ con prior Gamma conjugado.
 //! 6. **CliffordNet 2026 & Interacción Bivectorial:** Desenrollado SIMD 4x, Separación por Grados y Normalización Frobenius AuON.
 //! 7. **Métrica FIRE (Frobenius-Isometry Reinitialization):** Monitoreo de drift espectral $\|Q^\top Q - I_K\|_F / \sqrt{K}$.
-//! 8. **Protección de Concurrencia y Memoria FFI V906:** Estructura POD align(64) de 320 bytes, `std::ptr::copy` seguro ante solapamiento y FPU Hardening.
+//! 8. **Protección de Concurrencia y Memoria FFI v907:** Estructura POD align(64) de 320 bytes, `std::ptr::copy` seguro ante solapamiento y FPU Hardening.
 
 use std::cell::RefCell;
 use std::ffi::CString;
@@ -49,7 +49,7 @@ pub fn lassq_norm(x: &[f64]) -> f64 {
 }
 
 // ============================================================================
-// 1. GESTIÓN DE ERRORES Y CORTAFUEGOS FFI POD V906 (Thread-Local Isolated)
+// 1. GESTIÓN DE ERRORES Y CORTAFUEGOS FFI POD v907 (Thread-Local Isolated)
 // ============================================================================
 
 thread_local! {
@@ -58,7 +58,7 @@ thread_local! {
 
 #[repr(C, align(64))]
 #[derive(Debug, Clone, Copy)]
-pub struct V906Error {
+pub struct v907Error {
     pub code: u32,
     pub msg: [u8; 256],
     pub arena_id: u64,
@@ -66,7 +66,7 @@ pub struct V906Error {
     pub _pad: [u8; 40],
 }
 
-impl V906Error {
+impl v907Error {
     pub fn write_success(&mut self) {
         self.code = 0;
         self.msg[0] = 0;
@@ -93,14 +93,14 @@ fn set_last_error(msg: &str) {
     });
 }
 
-// DEPRECATED: Use polydim_rust_copy_last_error_v906 instead
+// DEPRECATED: Use polydim_rust_copy_last_error_v907 instead
 #[no_mangle]
-pub extern "C" fn polydim_rust_get_last_error_v906() -> *const c_char {
+pub extern "C" fn polydim_rust_get_last_error_v907() -> *const c_char {
     LAST_ERR_STR.with(|cell| cell.borrow().as_ptr())
 }
 
 #[no_mangle]
-pub extern "C" fn polydim_rust_copy_last_error_v906(dst: *mut c_char, cap: usize) -> c_int {
+pub extern "C" fn polydim_rust_copy_last_error_v907(dst: *mut c_char, cap: usize) -> c_int {
     if dst.is_null() || cap == 0 {
         return -1;
     }
@@ -117,24 +117,24 @@ pub extern "C" fn polydim_rust_copy_last_error_v906(dst: *mut c_char, cap: usize
 }
 
 #[no_mangle]
-pub extern "C" fn polydim_rust_clear_last_error_v906() {
+pub extern "C" fn polydim_rust_clear_last_error_v907() {
     LAST_ERR_STR.with(|cell| {
         *cell.borrow_mut() = CString::new("").unwrap();
     });
 }
 
 // ============================================================================
-// 2. FRENO NUMÉRICO ESPECTRAL AuON (Estabilización log-cosh V906)
+// 2. FRENO NUMÉRICO ESPECTRAL AuON (Estabilización log-cosh v907)
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn polydim_rust_auon_log_cosh_brake_v906(
+pub extern "C" fn polydim_rust_auon_log_cosh_brake_v907(
     residual: c_double,
     scale_s: c_double,
     lambda: c_double,
     loss_out: *mut c_double,
     grad_out: *mut c_double,
-    err: *mut V906Error,
+    err: *mut v907Error,
 ) -> c_int {
     let result = catch_unwind(AssertUnwindSafe(|| {
         if loss_out.is_null() || grad_out.is_null() {
@@ -192,13 +192,13 @@ pub extern "C" fn polydim_rust_auon_log_cosh_brake_v906(
 }
 
 #[no_mangle]
-pub extern "C" fn polydim_rust_auon_matrix_rms_normalize_v906(
+pub extern "C" fn polydim_rust_auon_matrix_rms_normalize_v907(
     rows: c_uint,
     cols: c_uint,
     matrix_in_ptr: *const c_double,
     matrix_out_ptr: *mut c_double,
     rms_out: *mut c_double,
-    err: *mut V906Error,
+    err: *mut v907Error,
 ) -> c_int {
     let result = catch_unwind(AssertUnwindSafe(|| {
         if matrix_in_ptr.is_null() || matrix_out_ptr.is_null() || rms_out.is_null() {
@@ -291,17 +291,17 @@ pub extern "C" fn polydim_rust_auon_matrix_rms_normalize_v906(
 }
 
 // ============================================================================
-// 3. MÉTRICA GEODÉSICA ANGULAR RIEMANNIANA EN S^(D-1) V906
+// 3. MÉTRICA GEODÉSICA ANGULAR RIEMANNIANA EN S^(D-1) v907
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn polydim_rust_riemannian_geodesic_v906(
+pub extern "C" fn polydim_rust_riemannian_geodesic_v907(
     u_ptr: *const c_double,
     v_ptr: *const c_double,
     dim: c_uint,
     angular_dist_out: *mut c_double,
     chordal_dist_out: *mut c_double,
-    err: *mut V906Error,
+    err: *mut v907Error,
 ) -> c_int {
     let result = catch_unwind(AssertUnwindSafe(|| {
         if u_ptr.is_null() || v_ptr.is_null() || angular_dist_out.is_null() || chordal_dist_out.is_null() {
@@ -368,17 +368,17 @@ pub extern "C" fn polydim_rust_riemannian_geodesic_v906(
 }
 
 // ============================================================================
-// 4. CLIFFORDNET 2026: DESENROLLADO SIMD 4X Y AuON V906
+// 4. CLIFFORDNET 2026: DESENROLLADO SIMD 4X Y AuON v907
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn polydim_rust_cliffordnet_bivector_interact_v906(
+pub extern "C" fn polydim_rust_cliffordnet_bivector_interact_v907(
     num_vectors: c_uint,
     dim_k: c_uint,
     vectors_in_ptr: *const c_double,
     bivectors_out_ptr: *mut c_double,
     energy_out: *mut c_double,
-    err: *mut V906Error,
+    err: *mut v907Error,
 ) -> c_int {
     let result = catch_unwind(AssertUnwindSafe(|| {
         if vectors_in_ptr.is_null() || bivectors_out_ptr.is_null() || energy_out.is_null() {
@@ -447,18 +447,18 @@ pub extern "C" fn polydim_rust_cliffordnet_bivector_interact_v906(
 }
 
 // ============================================================================
-// 5. MÉTRICA FIRE (Frobenius-Isometry Reinitialization) V906
+// 5. MÉTRICA FIRE (Frobenius-Isometry Reinitialization) v907
 // ============================================================================
 
 #[no_mangle]
-pub extern "C" fn polydim_rust_fire_metric_v906(
+pub extern "C" fn polydim_rust_fire_metric_v907(
     dim_d: c_uint,
     rank_k: c_uint,
     q_matrix_ptr: *const c_double,
     drift_threshold: c_double,
     spectral_drift_out: *mut c_double,
     reinit_needed_out: *mut u8,
-    err: *mut V906Error,
+    err: *mut v907Error,
 ) -> c_int {
     let result = catch_unwind(AssertUnwindSafe(|| {
         if q_matrix_ptr.is_null() || spectral_drift_out.is_null() || reinit_needed_out.is_null() {

@@ -1,10 +1,10 @@
-// kernel_cpp_v906.cpp
-// Kernel Nativo C++20 POLYDIM V906 (Master Industrial Release)
+// kernel_cpp_v907.cpp
+// Kernel Nativo C++20 POLYDIM v907 (Master Industrial Release)
 //
 // ============================================================================
-// ALCANCE ARQUITECTÓNICO Y CONTRATOS NUMÉRICOS SOTA V906:
+// ALCANCE ARQUITECTÓNICO Y CONTRATOS NUMÉRICOS SOTA v907:
 //
-// 1. Invariantes Geométricas y Numéricas SOTA V906:
+// 1. Invariantes Geométricas y Numéricas SOTA v907:
 //    - Distancia Geodésica Riemanniana en S^(D-1) con normalización LASSQ.
 //    - Freno Espectral AuON log-cosh exacto con estabilización log1p(2*sinh^2(z/2)).
 //    - Normalización RMS AuON con Suma Compensada Log-Sum-Exp por bloques.
@@ -36,11 +36,11 @@
 #endif
 
 // ============================================================================
-// 1. ESTRUCTURA DE ERROR Y TELEMETRÍA POD FFI V906 (ALIGN 64, 320 BYTES)
+// 1. ESTRUCTURA DE ERROR Y TELEMETRÍA POD FFI v907 (ALIGN 64, 320 BYTES)
 // ============================================================================
 
 #pragma pack(push, 8)
-struct alignas(64) PolydimErrorV906 {
+struct alignas(64) PolydimErrorv907 {
     uint32_t code;
     char msg[256];
     uint64_t arena_id;
@@ -49,10 +49,10 @@ struct alignas(64) PolydimErrorV906 {
 };
 #pragma pack(pop)
 
-static_assert(sizeof(PolydimErrorV906) == 320, "ABI Mismatch: PolydimErrorV906 must be exactly 320 bytes");
-static_assert(alignof(PolydimErrorV906) == 64, "ABI Mismatch: PolydimErrorV906 must have 64-byte alignment");
+static_assert(sizeof(PolydimErrorv907) == 320, "ABI Mismatch: PolydimErrorv907 must be exactly 320 bytes");
+static_assert(alignof(PolydimErrorv907) == 64, "ABI Mismatch: PolydimErrorv907 must have 64-byte alignment");
 
-static inline void set_error_success(PolydimErrorV906* err) noexcept {
+static inline void set_error_success(PolydimErrorv907* err) noexcept {
     if (err) {
         err->code = 0;
         err->msg[0] = '\0';
@@ -61,7 +61,7 @@ static inline void set_error_success(PolydimErrorV906* err) noexcept {
     }
 }
 
-static inline void set_error_msg(PolydimErrorV906* err, uint32_t code, const char* message) noexcept {
+static inline void set_error_msg(PolydimErrorv907* err, uint32_t code, const char* message) noexcept {
     if (err) {
         err->code = code;
         err->arena_id = 0;
@@ -101,20 +101,20 @@ static inline double lassq_norm_cpp(const double* x, size_t n) noexcept {
 }
 
 // ============================================================================
-// 2. FRENO ESPECTRAL AuON & RMS NORMALIZE (V906)
+// 2. FRENO ESPECTRAL AuON & RMS NORMALIZE (v907)
 // ============================================================================
 
-POLYDIM_EXPORT int polydim_cpp_auon_log_cosh_brake_v906(
+POLYDIM_EXPORT int polydim_cpp_auon_log_cosh_brake_v907(
     double residual,
     double scale_s,
     double lambda,
     double* loss_out,
     double* grad_out,
-    PolydimErrorV906* err
+    PolydimErrorv907* err
 ) noexcept {
     try {
         if (!loss_out || !grad_out) {
-            set_error_msg(err, 1, "Null pointer passed to cpp_auon_log_cosh_brake_v906");
+            set_error_msg(err, 1, "Null pointer passed to cpp_auon_log_cosh_brake_v907");
             return -1;
         }
 
@@ -159,18 +159,18 @@ POLYDIM_EXPORT int polydim_cpp_auon_log_cosh_brake_v906(
     }
 }
 
-// RMS Normalize con Log-Sum-Exp por bloques (V906)
-POLYDIM_EXPORT int polydim_cpp_auon_matrix_rms_normalize_v906(
+// RMS Normalize con Log-Sum-Exp por bloques (v907)
+POLYDIM_EXPORT int polydim_cpp_auon_matrix_rms_normalize_v907(
     uint32_t rows,
     uint32_t cols,
     const double* matrix_in,
     double* matrix_out,
     double* rms_out,
-    PolydimErrorV906* err
+    PolydimErrorv907* err
 ) noexcept {
     try {
         if (!matrix_in || !matrix_out || !rms_out) {
-            set_error_msg(err, 1, "Null pointers in cpp_auon_matrix_rms_normalize_v906");
+            set_error_msg(err, 1, "Null pointers in cpp_auon_matrix_rms_normalize_v907");
             return -1;
         }
 
@@ -248,20 +248,20 @@ POLYDIM_EXPORT int polydim_cpp_auon_matrix_rms_normalize_v906(
 }
 
 // ============================================================================
-// 3. MÉTRICA GEODÉSICA ANGULAR RIEMANNIANA EN S^(D-1) (OpenMP V906)
+// 3. MÉTRICA GEODÉSICA ANGULAR RIEMANNIANA EN S^(D-1) (OpenMP v907)
 // ============================================================================
 
-POLYDIM_EXPORT int polydim_cpp_riemannian_geodesic_v906(
+POLYDIM_EXPORT int polydim_cpp_riemannian_geodesic_v907(
     const double* u,
     const double* v,
     uint32_t dim,
     double* angular_dist_out,
     double* chordal_dist_out,
-    PolydimErrorV906* err
+    PolydimErrorv907* err
 ) noexcept {
     try {
         if (!u || !v || !angular_dist_out || !chordal_dist_out) {
-            set_error_msg(err, 1, "Null pointer in cpp_riemannian_geodesic_v906");
+            set_error_msg(err, 1, "Null pointer in cpp_riemannian_geodesic_v907");
             return -1;
         }
 
@@ -319,20 +319,20 @@ POLYDIM_EXPORT int polydim_cpp_riemannian_geodesic_v906(
 }
 
 // ============================================================================
-// 4. CLIFFORDNET 2026: CON DESENROLLADO SIMD 4X PARA NON-AVX-512 (V906)
+// 4. CLIFFORDNET 2026: CON DESENROLLADO SIMD 4X PARA NON-AVX-512 (v907)
 // ============================================================================
 
-POLYDIM_EXPORT int polydim_cpp_cliffordnet_bivector_interact_v906(
+POLYDIM_EXPORT int polydim_cpp_cliffordnet_bivector_interact_v907(
     uint32_t num_vectors,
     uint32_t dim_k,
     const double* vectors_in,
     double* bivectors_out,
     double* energy_out,
-    PolydimErrorV906* err
+    PolydimErrorv907* err
 ) noexcept {
     try {
         if (!vectors_in || !bivectors_out || !energy_out) {
-            set_error_msg(err, 1, "Null pointer in cliffordnet_bivector_interact_v906");
+            set_error_msg(err, 1, "Null pointer in cliffordnet_bivector_interact_v907");
             return -1;
         }
 
@@ -407,20 +407,20 @@ POLYDIM_EXPORT int polydim_cpp_cliffordnet_bivector_interact_v906(
 }
 
 // ============================================================================
-// 5. REDUCCIÓN GF(2) BITPACKED uint64_t SIMD CON UMBRAL DINÁMICO OPENMP (V906)
+// 5. REDUCCIÓN GF(2) BITPACKED uint64_t SIMD CON UMBRAL DINÁMICO OPENMP (v907)
 // ============================================================================
 
-POLYDIM_EXPORT int polydim_cpp_gf2_bitpacked_reduction_v906(
+POLYDIM_EXPORT int polydim_cpp_gf2_bitpacked_reduction_v907(
     uint32_t rows,
     uint32_t cols,
     const uint64_t* matrix_in,
     uint64_t* matrix_out,
     uint32_t* rank_out,
-    PolydimErrorV906* err
+    PolydimErrorv907* err
 ) noexcept {
     try {
         if (!matrix_in || !matrix_out || !rank_out) {
-            set_error_msg(err, 1, "Null pointer in gf2_bitpacked_reduction_v906");
+            set_error_msg(err, 1, "Null pointer in gf2_bitpacked_reduction_v907");
             return -1;
         }
 
@@ -498,12 +498,12 @@ POLYDIM_EXPORT int polydim_cpp_gf2_bitpacked_reduction_v906(
 }
 
 // ============================================================================
-// 6. RETRACCIÓN CAYLEY-STIEFEL MATRIX-FREE CON LU VECTORIZADO POR BLOQUES (V906)
+// 6. RETRACCIÓN CAYLEY-STIEFEL MATRIX-FREE CON LU VECTORIZADO POR BLOQUES (v907)
 // ============================================================================
 
 namespace {
 
-bool solve_linear_system_2k_v906(int64_t n_sys, int64_t n_rhs, const double* A, const double* B, double* X_sol) noexcept {
+bool solve_linear_system_2k_v907(int64_t n_sys, int64_t n_rhs, const double* A, const double* B, double* X_sol) noexcept {
     int64_t cols = n_sys + n_rhs;
     std::vector<double> aug(n_sys * cols);
     for (int64_t i = 0; i < n_sys; ++i) {
@@ -565,7 +565,7 @@ bool solve_linear_system_2k_v906(int64_t n_sys, int64_t n_rhs, const double* A, 
 
 } // namespace
 
-POLYDIM_EXPORT int polydim_cpp_stiefel_cayley_smw_retraction_v906(
+POLYDIM_EXPORT int polydim_cpp_stiefel_cayley_smw_retraction_v907(
     uint32_t dim_d,
     uint32_t rank_k,
     double tau,
@@ -573,11 +573,11 @@ POLYDIM_EXPORT int polydim_cpp_stiefel_cayley_smw_retraction_v906(
     const double* g_ptr,
     double* y_out,
     double* ortho_error_out,
-    PolydimErrorV906* err
+    PolydimErrorv907* err
 ) noexcept {
     try {
         if (!x_ptr || !g_ptr || !y_out || !ortho_error_out) {
-            set_error_msg(err, 1, "Null pointer in cpp_stiefel_cayley_smw_retraction_v906");
+            set_error_msg(err, 1, "Null pointer in cpp_stiefel_cayley_smw_retraction_v907");
             return -1;
         }
 
@@ -662,7 +662,7 @@ POLYDIM_EXPORT int polydim_cpp_stiefel_cayley_smw_retraction_v906(
         }
 
         std::vector<double> mat_z(n_sys * k, 0.0);
-        if (!solve_linear_system_2k_v906(n_sys, k, mat_m.data(), rhs.data(), mat_z.data())) {
+        if (!solve_linear_system_2k_v907(n_sys, k, mat_m.data(), rhs.data(), mat_z.data())) {
             set_error_msg(err, 6, "Matrix M is singular or ill-conditioned in SMW retraction");
             return -6;
         }
@@ -726,21 +726,21 @@ POLYDIM_EXPORT int polydim_cpp_stiefel_cayley_smw_retraction_v906(
 }
 
 // ============================================================================
-// 7. MÉTRICA FIRE (Frobenius-Isometry Reinitialization) V906
+// 7. MÉTRICA FIRE (Frobenius-Isometry Reinitialization) v907
 // ============================================================================
 
-POLYDIM_EXPORT int polydim_cpp_fire_metric_v906(
+POLYDIM_EXPORT int polydim_cpp_fire_metric_v907(
     uint32_t dim_d,
     uint32_t rank_k,
     const double* q_matrix,
     double drift_threshold,
     double* spectral_drift_out,
     uint8_t* reinit_needed_out,
-    PolydimErrorV906* err
+    PolydimErrorv907* err
 ) noexcept {
     try {
         if (!q_matrix || !spectral_drift_out || !reinit_needed_out) {
-            set_error_msg(err, 1, "Null pointer in fire_metric_v906");
+            set_error_msg(err, 1, "Null pointer in fire_metric_v907");
             return -1;
         }
 

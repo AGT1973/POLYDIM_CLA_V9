@@ -265,7 +265,11 @@ pub extern "C" fn polydim_rust_auon_matrix_rms_normalize_v906(
             sum_exp = t;
         }
 
-        let rms = (max_log.exp() * sum_exp / (n_elements as f64)).sqrt();
+        let rms = if sum_exp > 0.0 {
+            (max_log * 0.5).exp() * (sum_exp / (n_elements as f64)).sqrt()
+        } else {
+            0.0
+        };
         let scale = 1.0 / (rms + 1e-8);
         for i in 0..n_elements {
             out_slice[i] = in_slice[i] * scale;

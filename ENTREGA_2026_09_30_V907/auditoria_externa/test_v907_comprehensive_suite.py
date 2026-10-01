@@ -1,5 +1,5 @@
-# test_v906_comprehensive_suite.py
-# Comprehensive Physical Unit Test Suite - POLYDIM V906
+# test_v907_comprehensive_suite.py
+# Comprehensive Physical Unit Test Suite - POLYDIM v907
 # ============================================================================
 
 import os
@@ -9,18 +9,18 @@ import math
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from polydim_v906_monolito import (
-    PolydimEngineV906, require, PolydimErrorV906,
+from polydim_v907_monolito import (
+    PolydimEnginev907, require, PolydimErrorv907,
     PmtpSlabAllocatorWin, GenerationalBatchHNSW, SparseCliffordBladeIndexer,
     _clifford_canonical_sign
 )
 
 def run_all_tests():
     print("=" * 70)
-    print("      POLYDIM V906 PHYSICAL SILICON COMPREHENSIVE SUITE (14/14)")
+    print("      POLYDIM v907 PHYSICAL SILICON COMPREHENSIVE SUITE (14/14)")
     print("=" * 70)
 
-    engine = PolydimEngineV906()
+    engine = PolydimEnginev907()
 
     # TEST 1: AuON Log-Cosh Brake
     print("[TEST 1/14] AuON Log-Cosh Brake...")
@@ -83,8 +83,8 @@ def run_all_tests():
     g_mat = np.random.randn(16, 4) * 0.01
     y_out = np.zeros_like(q_mat)
     ortho_err = ctypes.c_double(0.0)
-    err = PolydimErrorV906()
-    res = engine.cpp.polydim_cpp_stiefel_cayley_smw_retraction_v906(
+    err = PolydimErrorv907()
+    res = engine.cpp.polydim_cpp_stiefel_cayley_smw_retraction_v907(
         16, 4, 0.1,
         q_mat.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         g_mat.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
@@ -100,8 +100,8 @@ def run_all_tests():
     q_mat, _ = np.linalg.qr(np.random.randn(20, 5))
     drift = ctypes.c_double(0.0)
     reinit = ctypes.c_uint8(0)
-    err = PolydimErrorV906()
-    res = engine.cpp.polydim_cpp_fire_metric_v906(
+    err = PolydimErrorv907()
+    res = engine.cpp.polydim_cpp_fire_metric_v907(
         20, 5,
         q_mat.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         1e-4, ctypes.byref(drift), ctypes.byref(reinit), ctypes.byref(err)
@@ -112,7 +112,7 @@ def run_all_tests():
 
     # TEST 8: Native Windows PMTP SharedMemory Transport
     print("[TEST 8/14] Native Windows SharedMemory PMTP Transport...")
-    pmtp = PmtpSlabAllocatorWin("Local\\PolydimV906TestSlab", 1024)
+    pmtp = PmtpSlabAllocatorWin("Local\\Polydimv907TestSlab", 1024)
     arr_in = np.array([3.14159, 2.71828, 1.41421, 1.73205], dtype=np.float64)
     pmtp.write_tensor(arr_in)
     arr_out = pmtp.read_tensor((4,), np.float64)
@@ -164,18 +164,18 @@ def run_all_tests():
             f"e12*e23 = {prod3.blades.get(0b0101)}, expected {expected_sign}")
     print("  -> PASS: Clifford canonical sign verified (anti-commutativity + contraction).")
 
-    # TEST 11: Rust FFI Bridge V906
-    print("[TEST 11/14] Rust FFI Bridge V906...")
+    # TEST 11: Rust FFI Bridge v907
+    print("[TEST 11/14] Rust FFI Bridge v907...")
     loss_r = ctypes.c_double(0.0)
     grad_r = ctypes.c_double(0.0)
-    err_r = PolydimErrorV906()
-    res_r = engine.rust.polydim_rust_auon_log_cosh_brake_v906(
+    err_r = PolydimErrorv907()
+    res_r = engine.rust.polydim_rust_auon_log_cosh_brake_v907(
         0.5, 1.0, 1.0,
         ctypes.byref(loss_r), ctypes.byref(grad_r), ctypes.byref(err_r)
     )
     require(res_r == 0, "Rust FFI AuON failed")
     require(abs(grad_r.value - math.tanh(0.5)) < 1e-5, "Rust grad mismatch")
-    print("  -> PASS: Rust FFI V906 bridge operational.")
+    print("  -> PASS: Rust FFI v907 bridge operational.")
 
     # TEST 12: Invariant Protection Guard Safety
     print("[TEST 12/14] Invariant Protection Guard Safety...")
@@ -194,16 +194,16 @@ def run_all_tests():
     out_rust = np.zeros_like(mat_cross_c)
     rms_cpp = ctypes.c_double(0.0)
     rms_rust = ctypes.c_double(0.0)
-    err_cpp = PolydimErrorV906()
-    err_rust = PolydimErrorV906()
+    err_cpp = PolydimErrorv907()
+    err_rust = PolydimErrorv907()
 
-    r_cpp = engine.cpp.polydim_cpp_auon_matrix_rms_normalize_v906(
+    r_cpp = engine.cpp.polydim_cpp_auon_matrix_rms_normalize_v907(
         8, 8,
         mat_cross_c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         out_cpp.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         ctypes.byref(rms_cpp), ctypes.byref(err_cpp)
     )
-    r_rust = engine.rust.polydim_rust_auon_matrix_rms_normalize_v906(
+    r_rust = engine.rust.polydim_rust_auon_matrix_rms_normalize_v907(
         8, 8,
         mat_cross_c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         out_rust.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
@@ -223,15 +223,15 @@ def run_all_tests():
     drift_rust = ctypes.c_double(0.0)
     reinit_cpp = ctypes.c_uint8(0)
     reinit_rust = ctypes.c_uint8(0)
-    err_cpp2 = PolydimErrorV906()
-    err_rust2 = PolydimErrorV906()
+    err_cpp2 = PolydimErrorv907()
+    err_rust2 = PolydimErrorv907()
 
-    r_cpp2 = engine.cpp.polydim_cpp_fire_metric_v906(
+    r_cpp2 = engine.cpp.polydim_cpp_fire_metric_v907(
         20, 5,
         q_cross_c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         1e-4, ctypes.byref(drift_cpp), ctypes.byref(reinit_cpp), ctypes.byref(err_cpp2)
     )
-    r_rust2 = engine.rust.polydim_rust_fire_metric_v906(
+    r_rust2 = engine.rust.polydim_rust_fire_metric_v907(
         20, 5,
         q_cross_c.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
         1e-4, ctypes.byref(drift_rust), ctypes.byref(reinit_rust), ctypes.byref(err_rust2)
