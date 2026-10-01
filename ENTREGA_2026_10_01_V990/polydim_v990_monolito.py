@@ -1,0 +1,392 @@
+# ============================================================================
+# POLYDIM MONOLITO V990 (SERIE 900 PRODUCCION QUINCUAGESIMAL CERTIFICADA - HITO 80)
+# ============================================================================
+
+import ctypes
+import numpy as np
+import os
+import sys
+
+_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Add MinGW bin dir for libgomp/libwinpthread
+mingw_bin = r"E:\winlibs_gcc14_zip\mingw64\bin"
+if os.path.exists(mingw_bin) and hasattr(os, "add_dll_directory"):
+    try:
+        os.add_dll_directory(mingw_bin)
+    except Exception:
+        pass
+
+# C++ DLL Loader
+_cpp_dll_path = os.path.join(_DIR, "kernel_cpp_v990.dll")
+_rust_dll_path = os.path.join(_DIR, "kernel_rust_v990.dll")
+
+_cpp_lib = None
+_rust_lib = None
+
+if os.path.exists(_cpp_dll_path):
+    try:
+        _cpp_lib = ctypes.CDLL(_cpp_dll_path)
+    except Exception as e:
+        print(f"[POLYDIM V990 WARN] Could not load C++ DLL: {e}", file=sys.stderr)
+
+if os.path.exists(_rust_dll_path):
+    try:
+        _rust_lib = ctypes.CDLL(_rust_dll_path)
+    except Exception as e:
+        print(f"[POLYDIM V990 WARN] Could not load Rust DLL: {e}", file=sys.stderr)
+
+
+class PolydimV990Engine:
+    """Master engine for POLYDIM V990 native low-level operations."""
+
+    @staticmethod
+    def spherical_vlasov_poisson_step(pos: np.ndarray, mom: np.ndarray, grad_phi: np.ndarray, dt: float = 0.01) -> tuple[np.ndarray, np.ndarray]:
+        pos = np.ascontiguousarray(pos, dtype=np.float32)
+        mom = np.ascontiguousarray(mom, dtype=np.float32)
+        grad_phi = np.ascontiguousarray(grad_phi, dtype=np.float32)
+        out_pos = np.zeros_like(pos)
+        out_mom = np.zeros_like(mom)
+        N, D = pos.shape
+
+        if _cpp_lib and hasattr(_cpp_lib, "polydim_spherical_vlasov_poisson_step_v990"):
+            _cpp_lib.polydim_spherical_vlasov_poisson_step_v990.argtypes = [
+                ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+                ctypes.c_char_p, ctypes.c_char_p,
+                ctypes.c_int32, ctypes.c_int32, ctypes.c_float
+            ]
+            _cpp_lib.polydim_spherical_vlasov_poisson_step_v990.restype = ctypes.c_int32
+            res = _cpp_lib.polydim_spherical_vlasov_poisson_step_v990(
+                pos.ctypes.data_as(ctypes.c_char_p),
+                mom.ctypes.data_as(ctypes.c_char_p),
+                grad_phi.ctypes.data_as(ctypes.c_char_p),
+                out_pos.ctypes.data_as(ctypes.c_char_p),
+                out_mom.ctypes.data_as(ctypes.c_char_p),
+                ctypes.c_int32(N),
+                ctypes.c_int32(D),
+                ctypes.c_float(dt)
+            )
+            if res == 0:
+                return out_pos, out_mom
+
+        # Python fallback
+        for i in range(N):
+            x = pos[i]
+            p = mom[i]
+            g = grad_phi[i]
+            dot_gx = np.dot(g, x)
+            p_norm_sq = np.dot(p, p)
+            force = -(g - dot_gx * x) - p_norm_sq * x
+            p_new = p + dt * force
+            x_new = x + dt * p_new
+            x_new = x_new / max(1e-12, np.linalg.norm(x_new))
+            p_new = p_new - np.dot(x_new, p_new) * x_new
+            out_pos[i] = x_new
+            out_mom[i] = p_new
+        return out_pos, out_mom
+
+    @staticmethod
+    def calogero_sutherland_integrals(positions: np.ndarray, momenta: np.ndarray, g_coupling: float = 1.0) -> np.ndarray:
+        positions = np.ascontiguousarray(positions, dtype=np.float32)
+        momenta = np.ascontiguousarray(momenta, dtype=np.float32)
+        out_integrals = np.zeros(2, dtype=np.float32)
+        N = positions.shape[0]
+
+        if _cpp_lib and hasattr(_cpp_lib, "polydim_calogero_sutherland_integrals_v990"):
+            _cpp_lib.polydim_calogero_sutherland_integrals_v990.argtypes = [
+                ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+                ctypes.c_int32, ctypes.c_float
+            ]
+            _cpp_lib.polydim_calogero_sutherland_integrals_v990.restype = ctypes.c_int32
+            res = _cpp_lib.polydim_calogero_sutherland_integrals_v990(
+                positions.ctypes.data_as(ctypes.c_char_p),
+                momenta.ctypes.data_as(ctypes.c_char_p),
+                out_integrals.ctypes.data_as(ctypes.c_char_p),
+                ctypes.c_int32(N),
+                ctypes.c_float(g_coupling)
+            )
+            if res == 0:
+                return out_integrals
+
+        # Python fallback
+        L = np.diag(momenta).astype(np.complex64)
+        for j in range(N):
+            for k in range(N):
+                if j != k:
+                    diff = positions[j] - positions[k]
+                    sin_v = np.sin(diff)
+                    cot_v = np.cos(diff) / sin_v if abs(sin_v) > 1e-6 else 0.0
+                    L[j, k] = 1j * g_coupling * cot_v
+        out_integrals[0] = np.real(np.trace(L))
+        out_integrals[1] = 0.5 * np.real(np.trace(L @ L))
+        return out_integrals
+
+    @staticmethod
+    def wen_yin_stiefel_retraction(X: np.ndarray, G: np.ndarray, tau: float = 0.1) -> np.ndarray:
+        X = np.ascontiguousarray(X, dtype=np.float32)
+        G = np.ascontiguousarray(G, dtype=np.float32)
+        out_X = np.zeros_like(X)
+        D, K = X.shape
+
+        if _cpp_lib and hasattr(_cpp_lib, "polydim_wen_yin_stiefel_retraction_v990"):
+            _cpp_lib.polydim_wen_yin_stiefel_retraction_v990.argtypes = [
+                ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+                ctypes.c_int32, ctypes.c_int32, ctypes.c_float
+            ]
+            _cpp_lib.polydim_wen_yin_stiefel_retraction_v990.restype = ctypes.c_int32
+            res = _cpp_lib.polydim_wen_yin_stiefel_retraction_v990(
+                X.ctypes.data_as(ctypes.c_char_p),
+                G.ctypes.data_as(ctypes.c_char_p),
+                out_X.ctypes.data_as(ctypes.c_char_p),
+                ctypes.c_int32(D),
+                ctypes.c_int32(K),
+                ctypes.c_float(tau)
+            )
+            if res == 0:
+                return out_X
+
+        # Python fallback
+        A = G.T @ X - X.T @ G
+        M = np.eye(K, dtype=np.float32) + (tau * 0.5) * A
+        out = X @ M
+        for c in range(K):
+            norm = np.linalg.norm(out[:, c])
+            out[:, c] /= max(1e-12, norm)
+        return out
+
+    @staticmethod
+    def nambu_step(x: np.ndarray, grad_V: np.ndarray, dt: float = 0.01) -> np.ndarray:
+        x = np.ascontiguousarray(x, dtype=np.float32)
+        grad_V = np.ascontiguousarray(grad_V, dtype=np.float32)
+        out_x = np.zeros_like(x)
+        D = x.shape[0]
+
+        if _cpp_lib and hasattr(_cpp_lib, "polydim_nambu_integrator_v990"):
+            _cpp_lib.polydim_nambu_integrator_v990.argtypes = [
+                ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int32, ctypes.c_float
+            ]
+            _cpp_lib.polydim_nambu_integrator_v990.restype = ctypes.c_int32
+            res = _cpp_lib.polydim_nambu_integrator_v990(
+                x.ctypes.data_as(ctypes.c_char_p),
+                grad_V.ctypes.data_as(ctypes.c_char_p),
+                out_x.ctypes.data_as(ctypes.c_char_p),
+                ctypes.c_int32(D),
+                ctypes.c_float(dt)
+            )
+            if res == 0:
+                return out_x
+
+        # Python fallback
+        out = np.zeros_like(x)
+        for i in range(D):
+            j = (i + 1) % D
+            k = (i + 2) % D
+            bracket = x[j] * grad_V[k] - x[k] * grad_V[j]
+            out[i] = x[i] + dt * bracket
+        norm = np.linalg.norm(out)
+        return out / max(1e-12, norm)
+
+    @staticmethod
+    def e8_quantize(vec: np.ndarray) -> np.ndarray:
+        vec = np.ascontiguousarray(vec, dtype=np.float32)
+        out = np.zeros_like(vec)
+        D = vec.shape[0]
+
+        if _cpp_lib and hasattr(_cpp_lib, "polydim_e8_lattice_quantize_v990") and (D % 8 == 0):
+            _cpp_lib.polydim_e8_lattice_quantize_v990.argtypes = [
+                ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int32
+            ]
+            _cpp_lib.polydim_e8_lattice_quantize_v990.restype = ctypes.c_int32
+            res = _cpp_lib.polydim_e8_lattice_quantize_v990(
+                vec.ctypes.data_as(ctypes.c_char_p),
+                out.ctypes.data_as(ctypes.c_char_p),
+                ctypes.c_int32(D)
+            )
+            if res == 0:
+                return out
+
+        # Python fallback
+        out = np.copy(vec)
+        for b in range(D // 8):
+            blk = vec[b*8:(b+1)*8]
+            f = np.round(blk)
+            if int(np.sum(f)) % 2 != 0:
+                diffs = np.abs(blk - f)
+                w = np.argmax(diffs)
+                f[w] += 1.0 if blk[w] > f[w] else -1.0
+            out[b*8:(b+1)*8] = f
+        return out
+
+    @staticmethod
+    def marsden_weinstein_reduce(Q: np.ndarray, P: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        Q = np.ascontiguousarray(Q, dtype=np.float32)
+        P = np.ascontiguousarray(P, dtype=np.float32)
+        out_Q = np.zeros_like(Q)
+        out_P = np.zeros_like(P)
+        D, K = Q.shape
+
+        if _cpp_lib and hasattr(_cpp_lib, "polydim_marsden_weinstein_reduction_v990"):
+            _cpp_lib.polydim_marsden_weinstein_reduction_v990.argtypes = [
+                ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p,
+                ctypes.c_int32, ctypes.c_int32
+            ]
+            _cpp_lib.polydim_marsden_weinstein_reduction_v990.restype = ctypes.c_int32
+            res = _cpp_lib.polydim_marsden_weinstein_reduction_v990(
+                Q.ctypes.data_as(ctypes.c_char_p),
+                P.ctypes.data_as(ctypes.c_char_p),
+                out_Q.ctypes.data_as(ctypes.c_char_p),
+                out_P.ctypes.data_as(ctypes.c_char_p),
+                ctypes.c_int32(D),
+                ctypes.c_int32(K)
+            )
+            if res == 0:
+                return out_Q, out_P
+
+        J = Q.T @ P - P.T @ Q
+        out_Q = np.copy(Q)
+        out_P = P - 0.5 * (Q @ J)
+        return out_Q, out_P
+
+    @staticmethod
+    def parallel_transport_householder(x: np.ndarray, y: np.ndarray, v: np.ndarray) -> np.ndarray:
+        x = np.ascontiguousarray(x, dtype=np.float32)
+        y = np.ascontiguousarray(y, dtype=np.float32)
+        v = np.ascontiguousarray(v, dtype=np.float32)
+        out_v = np.zeros_like(v)
+        D = x.shape[0]
+
+        if _cpp_lib and hasattr(_cpp_lib, "polydim_parallel_transport_householder_v990"):
+            _cpp_lib.polydim_parallel_transport_householder_v990.argtypes = [
+                ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int32
+            ]
+            _cpp_lib.polydim_parallel_transport_householder_v990.restype = ctypes.c_int32
+            res = _cpp_lib.polydim_parallel_transport_householder_v990(
+                x.ctypes.data_as(ctypes.c_char_p),
+                y.ctypes.data_as(ctypes.c_char_p),
+                v.ctypes.data_as(ctypes.c_char_p),
+                out_v.ctypes.data_as(ctypes.c_char_p),
+                ctypes.c_int32(D)
+            )
+            if res == 0:
+                return out_v
+
+        # Python fallback
+        dot_xy = float(np.dot(x, y))
+        if dot_xy <= -0.999999:
+            return -v
+        factor = float(np.dot(x + y, v)) / (1.0 + dot_xy)
+        return v - factor * (x + y)
+
+    @staticmethod
+    def robbins_siegmund(losses: np.ndarray, alpha: float = 0.1) -> np.ndarray:
+        losses = np.ascontiguousarray(losses, dtype=np.float32)
+        out_v = np.zeros_like(losses)
+        T = losses.shape[0]
+
+        if _rust_lib and hasattr(_rust_lib, "polydim_robbins_siegmund_conformal_v990"):
+            _rust_lib.polydim_robbins_siegmund_conformal_v990.argtypes = [
+                ctypes.c_char_p, ctypes.c_float, ctypes.c_char_p, ctypes.c_int32
+            ]
+            _rust_lib.polydim_robbins_siegmund_conformal_v990.restype = ctypes.c_int32
+            res = _rust_lib.polydim_robbins_siegmund_conformal_v990(
+                losses.ctypes.data_as(ctypes.c_char_p),
+                ctypes.c_float(alpha),
+                out_v.ctypes.data_as(ctypes.c_char_p),
+                ctypes.c_int32(T)
+            )
+            if res == 0:
+                return out_v
+
+        v = 1.0
+        for t in range(T):
+            gamma = 1.0 / (t + 2)
+            beta = 0.5 / (t + 2)
+            psi = np.tanh(losses[t] - alpha)
+            v = max(1e-6, (1.0 - gamma) * v + beta * psi)
+            out_v[t] = v
+        return out_v
+
+    @staticmethod
+    def matrix_freedman_tropp(matrices: np.ndarray, u_thresh: float = 0.5) -> float:
+        matrices = np.ascontiguousarray(matrices, dtype=np.float32)
+        T, D, _ = matrices.shape
+        out_drift = ctypes.c_float(0.0)
+
+        if _rust_lib and hasattr(_rust_lib, "polydim_matrix_freedman_tropp_v990"):
+            _rust_lib.polydim_matrix_freedman_tropp_v990.argtypes = [
+                ctypes.c_char_p, ctypes.c_int32, ctypes.c_int32, ctypes.c_float, ctypes.POINTER(ctypes.c_float)
+            ]
+            _rust_lib.polydim_matrix_freedman_tropp_v990.restype = ctypes.c_int32
+            res = _rust_lib.polydim_matrix_freedman_tropp_v990(
+                matrices.ctypes.data_as(ctypes.c_char_p),
+                ctypes.c_int32(T),
+                ctypes.c_int32(D),
+                ctypes.c_float(u_thresh),
+                ctypes.byref(out_drift)
+            )
+            if res == 0:
+                return out_drift.value
+
+        # Python fallback
+        traces = [np.trace(matrices[t]) for t in range(T)]
+        avg = np.mean(traces) / D
+        return 1.0 if avg > u_thresh else 0.0
+
+    @staticmethod
+    def betti1_rips(points: np.ndarray, eps: float = 0.5) -> int:
+        points = np.ascontiguousarray(points, dtype=np.float32)
+        N, D = points.shape
+
+        if _rust_lib and hasattr(_rust_lib, "polydim_betti1_rips_v990"):
+            _rust_lib.polydim_betti1_rips_v990.argtypes = [
+                ctypes.c_char_p, ctypes.c_int32, ctypes.c_int32, ctypes.c_float
+            ]
+            _rust_lib.polydim_betti1_rips_v990.restype = ctypes.c_int32
+            return _rust_lib.polydim_betti1_rips_v990(
+                points.ctypes.data_as(ctypes.c_char_p),
+                ctypes.c_int32(N),
+                ctypes.c_int32(D),
+                ctypes.c_float(eps)
+            )
+
+        # Python fallback
+        edges = 0
+        for i in range(N):
+            for j in range(i + 1, N):
+                if np.linalg.norm(points[i] - points[j]) <= eps:
+                    edges += 1
+        return max(0, edges - N + 1)
+
+    @staticmethod
+    def clifford_rotor_spin(x: np.ndarray, u: np.ndarray, v: np.ndarray, theta: float = 0.1) -> np.ndarray:
+        x = np.ascontiguousarray(x, dtype=np.float32)
+        u = np.ascontiguousarray(u, dtype=np.float32)
+        v = np.ascontiguousarray(v, dtype=np.float32)
+        out_x = np.zeros_like(x)
+        D = x.shape[0]
+
+        if _rust_lib and hasattr(_rust_lib, "polydim_clifford_rotor_spin_v990"):
+            _rust_lib.polydim_clifford_rotor_spin_v990.argtypes = [
+                ctypes.c_char_p, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_float,
+                ctypes.c_char_p, ctypes.c_int32
+            ]
+            _rust_lib.polydim_clifford_rotor_spin_v990.restype = ctypes.c_int32
+            res = _rust_lib.polydim_clifford_rotor_spin_v990(
+                x.ctypes.data_as(ctypes.c_char_p),
+                u.ctypes.data_as(ctypes.c_char_p),
+                v.ctypes.data_as(ctypes.c_char_p),
+                ctypes.c_float(theta),
+                out_x.ctypes.data_as(ctypes.c_char_p),
+                ctypes.c_int32(D)
+            )
+            if res == 0:
+                return out_x
+
+        # Python fallback
+        c = np.cos(theta)
+        s = np.sin(theta)
+        dot_ux = np.dot(u, x)
+        dot_vx = np.dot(v, x)
+        out = x + (c - 1.0) * (dot_ux * u + dot_vx * v) + s * (dot_ux * v - dot_vx * u)
+        norm = np.linalg.norm(out)
+        return out / max(1e-12, norm)

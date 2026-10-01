@@ -1,16 +1,40 @@
+# Contexto Histórico — Serie 900 (V990 Industrial Release)
+# Fecha: 2026-10-01
+# Repositorio Oficial: https://github.com/AGT1973/POLYDIM_CLA_V9.git
+# Regla 13: Anti-Token Explosion — Snapshot de Estado
 
-# Contexto Histórico - POLYDIM EINSOF (Checkpoint V911 -> V912)
+---
 
-**Estado Operativo:**
-- **V911 Certificada (Fase 1 Dual-Run):** Implementa el monitor SOTATelemetryDriftMonitor (CUSUM/EWMA) en Python y el prototipo base C++ para pybind11 (polydim_pybind_v911.cpp), coexistiendo con ctypes.
-- Tests físicos y Fuzz hounds: PASSED 14/14 (Exit Code 0).
-- Backups en Git (V900 branch) y GDrive (I:\Mi unidad\POLYDIM_BACKUP) asegurados.
+## 🌐 Estado General del Repositorio y Arquitectura
 
-**Staging Teórico Consolidado (Hoja de Ruta V912):**
-Se ingirió Propuesta para V909.md y Diagnóstico.md. La refactorización exigida (Nivel 3) consta de:
-1. **FGMRES Matrix-Free & Precisión Mixta:** Solver GPU-resident con iteración Arnoldi en BF16/FP16 y refinamiento iterativo en FP64, usando la Identidad de Woodbury explícita (sin armar  	imes 2K$).
-2. **DLPack / PyBind11 (Zero-Copy):** Abandono definitivo de ctypes. Intercambio de tensores HBM3 directo vía dlpack.h (Nivel 0 C Exchange API).
-3. **E-Process Conformal Martingales:** Reemplazo del CUSUM estático por BOCPD acoplado a Martingalas Conformes (E-values) para detección topológica rigurosa.
+- **Serie Activa:** Serie 900 (`V990`).
+- **Repositorio Git:** `https://github.com/AGT1973/POLYDIM_CLA_V9.git`
+- **Directorio de Entrega Activo:** `E:\POLYDIM_EINSOF\ENTREGA_2026_10_01_V990\`
+- **Remotes Configurados en `E:\POLYDIM_EINSOF`:**
+  - `origin` → `https://github.com/AGT1973/POLYDIM_CLA_V9.git` (Serie 900)
+  - `origin_v9` → `https://github.com/AGT1973/POLYDIM_CLA_V9.git`
+  - `origin_v8` → `https://github.com/AGT1973/POLYDIM_CLA_V8.git`
+  - `origin_v7` → `https://github.com/AGT1973/POLYDIM_CLA_V7.git`
+- **Base de Datos Vectorial:** `E:\POLYDIM-THEORICAL\POLYDIM_VECDB.sqlite` (actualizada con snapshot).
+- **Memoria Permanente:** `C:\Users\eluithi\.gemini\config\PERMANENT_MEMORY.md` (actualizada).
 
-**Siguiente Acción Esperada:**
-Ejecución de la migración V912 (Fase 2) que reconstruirá el puente compilado y la arquitectura de Krylov.
+---
+
+## 📁 Archivos Base Generados en `ENTREGA_2026_10_01_V990\`
+
+1. `readme_first.md` — Manifiesto técnico Serie 900, contratos numéricos y guía de evaluación.
+2. `kernel_rust_v990.rs` + `kernel_rust_v990.rs.txt` + `.dll`
+3. `kernel_cpp_v990.cpp` + `kernel_cpp_v990.cpp.txt` + `.dll`
+4. `polydim_triton_kernel_v990.py`
+5. `polydim_v990_monolito.py`
+6. `build_and_test_v990.py`
+7. `auditoria_externa/test_v990_comprehensive_suite.py`
+8. `auditoria_externa/fuzz_v990_destructive_hounds.py`
+
+---
+
+## 📋 Próximos Pasos Inmediatos Post-Reinicio
+
+1. Ejecutar `python build_and_test_v990.py` en `E:\POLYDIM_EINSOF\ENTREGA_2026_10_01_V990\` para compilar y validar la suite completa.
+2. Ejecutar `python auditoria_externa/fuzz_v990_destructive_hounds.py` para certificar los sabuesos adversariales.
+3. Commit y push formal de la Serie 900 a `https://github.com/AGT1973/POLYDIM_CLA_V9.git`.
