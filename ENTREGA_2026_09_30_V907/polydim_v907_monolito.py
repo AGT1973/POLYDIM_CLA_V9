@@ -282,7 +282,7 @@ class PmtpSlabAllocatorWin:
             PAGE_READWRITE = 0x04
 
             CreateFileMappingA = ctypes.windll.kernel32.CreateFileMappingA
-            CreateFileMappingA.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_char_p]
+            CreateFileMappingA.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
             CreateFileMappingA.restype = ctypes.c_void_p
 
             MapViewOfFile = ctypes.windll.kernel32.MapViewOfFile

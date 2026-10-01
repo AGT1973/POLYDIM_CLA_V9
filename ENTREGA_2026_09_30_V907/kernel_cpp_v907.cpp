@@ -798,3 +798,4 @@ POLYDIM_EXPORT int polydim_cpp_fire_metric_v907(
         return -99;
     }
 }
+

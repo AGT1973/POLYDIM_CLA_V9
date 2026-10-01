@@ -20,3 +20,6 @@
 - `build_and_test_v907.py`
 - `auditoria_externa/test_v907_comprehensive_suite.py`
 - `auditoria_externa/fuzz_v907_destructive_hounds.py`
+
+## Arquitectura ROCm / TPU Triton
+Se incorpora el módulo polydim_triton_kernel_v907.py habilitando reducción paralela de Geodésicas y normalización RMS Log-Sum-Exp estricta de ultra-baja latencia en GPU (MI300X/TPU).
