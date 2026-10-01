@@ -1,5 +1,5 @@
 {
-  "last_probe_timestamp": "2026-09-30 16:00:53",
+  "last_probe_timestamp": "2026-10-01 16:00:17",
   "providers": {
     "cerebras_wse": {
       "status": "ONLINE",
@@ -15,17 +15,17 @@
       "status": "ONLINE",
       "provider": "Groq LPU",
       "models": [
+        "whisper-large-v3-turbo",
         "canopylabs/orpheus-v1-english",
-        "openai/gpt-oss-120b",
-        "qwen/qwen3.8-27b",
-        "canopylabs/orpheus-arabic-saudi",
         "openai/gpt-oss-20b",
-        "allam-2-7b",
         "whisper-large-v3",
-        "openai/gpt-oss-safeguard-20b",
+        "qwen/qwen3.8-27b",
+        "openai/gpt-oss-120b",
         "meta-llama/llama-prompt-guard-2-86m",
-        "meta-llama/llama-prompt-guard-2-22m",
-        "whisper-large-v3-turbo"
+        "openai/gpt-oss-safeguard-20b",
+        "allam-2-7b",
+        "canopylabs/orpheus-arabic-saudi",
+        "meta-llama/llama-prompt-guard-2-22m"
       ],
       "sota_llama": null,
       "sota_deepseek": null

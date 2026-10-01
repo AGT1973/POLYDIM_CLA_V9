@@ -82,6 +82,13 @@
       "subject": "Ollama now supports Jev-like decision models",
       "vault": "account_cursos_ai",
       "action_required": "Verificar nuevos modelos/capacidades en DYNAMIC_COMPUTE_CATALOG.json"
+    },
+    {
+      "timestamp": "2026-10-01 16:00:29",
+      "provider": "ChatGPT <noreply@email.openai.com>",
+      "subject": "Traduce lo que quieras, a tu manera",
+      "vault": "account_cursos_ai",
+      "action_required": "Verificar nuevos modelos/capacidades en DYNAMIC_COMPUTE_CATALOG.json"
     }
   ]
 }
