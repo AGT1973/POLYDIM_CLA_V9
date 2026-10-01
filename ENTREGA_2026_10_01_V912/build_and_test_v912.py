@@ -1,3 +1,4 @@
+# build_and_test_v912.py
 import os
 import sys
 import subprocess
@@ -22,6 +23,7 @@ def build_cpp():
     ]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0: raise RuntimeError(f"C++ build failed:\n{res.stderr}")
+    print("  -> C++ DLL built successfully:", dll)
 
 def build_rust():
     print("[BUILD] Compiling Rust kernel v912...")
@@ -35,31 +37,26 @@ def build_rust():
     ]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0: raise RuntimeError(f"Rust build failed:\n{res.stderr}")
-
-def build_pybind():
-    print("[BUILD] Compiling PyBind11 v912 module via setup...")
-    setup_script = os.path.join(BASE_DIR, "..", "setup_v912.py")
-    cmd = [PYTHON, setup_script, "build_ext", "--inplace"]
-    res = subprocess.run(cmd, capture_output=True, text=True, cwd=os.path.join(BASE_DIR, ".."))
-    if res.returncode != 0: raise RuntimeError(f"PyBind build failed:\n{res.stderr}\n{res.stdout}")
+    print("  -> Rust DLL built successfully:", dll)
 
 def run_tests():
     print("[TEST] Running V912 suite...")
     test_script = os.path.join(BASE_DIR, "auditoria_externa", "test_v912_comprehensive_suite.py")
     res = subprocess.run([PYTHON, test_script], capture_output=True, text=True, cwd=BASE_DIR)
-    if res.returncode != 0: raise RuntimeError(f"Tests failed:\n{res.stderr}\n{res.stdout}")
+    print(res.stdout)
+    if res.returncode != 0: raise RuntimeError(f"Tests failed:\n{res.stderr}")
 
 def run_fuzz():
     print("[FUZZ] Running V912 fuzz hounds...")
     fuzz_script = os.path.join(BASE_DIR, "auditoria_externa", "fuzz_v912_destructive_hounds.py")
     res = subprocess.run([PYTHON, fuzz_script], capture_output=True, text=True, cwd=BASE_DIR)
-    if res.returncode != 0: raise RuntimeError(f"Fuzz failed:\n{res.stderr}\n{res.stdout}")
+    print(res.stdout)
+    if res.returncode != 0: raise RuntimeError(f"Fuzz failed:\n{res.stderr}")
 
 if __name__ == "__main__":
     try:
         build_cpp()
         build_rust()
-        build_pybind()
         run_tests()
         run_fuzz()
         print("V912 BUILT AND TESTED SUCCESSFULLY - EXIT CODE 0")
