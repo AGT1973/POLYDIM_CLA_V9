@@ -360,6 +360,7 @@ pub unsafe extern "C" fn polydim_betti1_rips_v1150(
             return 0;
         }
 
+        // Enumerar 2-símplices (triángulos) y construir vectores columna de borde sobre GF(2)
         let num_words = (num_e + 63) / 64;
         let mut boundary_cols: Vec<Vec<u64>> = Vec::new();
 
@@ -431,7 +432,7 @@ pub unsafe extern "C" fn polydim_betti1_rips_v1150(
     }
 }
 
-// 6. ROTOR DE CLIFFORD SPIN(D) CON ORTONORMALIZACIÓN MGS EN F64 Y PRESERVACIÓN ISOMÉTRICA EXACTA
+// 6. ROTOR DE CLIFFORD SPIN(D) CON REORTOGONALIZACIÓN "TWICE-IS-ENOUGH" Y ACTUALIZACIÓN PLANAR DE RANGO 2
 #[no_mangle]
 pub unsafe extern "C" fn polydim_clifford_rotor_spin_v1150(
     x: *const f32,
@@ -454,76 +455,99 @@ pub unsafe extern "C" fn polydim_clifford_rotor_spin_v1150(
 
         // 1. Norma en f64 de u
         let mut u_norm_sq = 0.0_f64;
-        for i in 0..d_u {
-            let u_val = u_s[i] as f64;
-            u_norm_sq += u_val * u_val;
-        }
-        let nu = u_norm_sq.sqrt();
-        if nu < 1e-12_f64 || !nu.is_finite() {
-            for i in 0..d_u { out_s[i] = x_s[i]; }
-            return 0;
-        }
-
-        // 2. Proyección e1 = u / ||u|| y <e1, v>
-        let mut e1_dot_v = 0.0_f64;
         let mut v_norm_sq = 0.0_f64;
         for i in 0..d_u {
-            let e1 = (u_s[i] as f64) / nu;
-            let vi = v_s[i] as f64;
-            e1_dot_v += e1 * vi;
-            v_norm_sq += vi * vi;
+            let u_val = u_s[i] as f64;
+            let v_val = v_s[i] as f64;
+            u_norm_sq += u_val * u_val;
+            v_norm_sq += v_val * v_val;
         }
+        let nu = u_norm_sq.sqrt();
         let nv = v_norm_sq.sqrt();
-        if nv < 1e-12_f64 || !nv.is_finite() {
+        if nu < 1e-12_f64 || nv < 1e-12_f64 || !nu.is_finite() || !nv.is_finite() {
+            // u o v degenerados: copia identidad x a out_x
             for i in 0..d_u { out_s[i] = x_s[i]; }
             return 0;
         }
 
-        // 3. Componente ortogonal w = v - <e1,v>e1
-        let mut w_norm_sq = 0.0_f64;
+        let inv_nu = 1.0_f64 / nu;
+
+        // 2. Primera pasada de proyección MGS: w = v - <e1, v> e1
+        let mut e1_dot_v = 0.0_f64;
         for i in 0..d_u {
-            let e1 = (u_s[i] as f64) / nu;
-            let wi = (v_s[i] as f64) - e1_dot_v * e1;
-            w_norm_sq += wi * wi;
+            let e1_i = (u_s[i] as f64) * inv_nu;
+            let vi = v_s[i] as f64;
+            e1_dot_v += e1_i * vi;
         }
-        let nw = w_norm_sq.sqrt();
+
+        // Vector temporal w en heap/stack para reortogonalización precisa
+        let mut w = vec![0.0_f64; d_u];
+        let mut _w_norm_sq1 = 0.0_f64;
+        for i in 0..d_u {
+            let e1_i = (u_s[i] as f64) * inv_nu;
+            let wi = (v_s[i] as f64) - e1_dot_v * e1_i;
+            w[i] = wi;
+            _w_norm_sq1 += wi * wi;
+        }
+
+        // 3. Segunda pasada de reortogonalización (Twice-Is-Enough para cota de pérdida de ortogonalidad <= O(eps))
+        let mut e1_dot_w = 0.0_f64;
+        for i in 0..d_u {
+            let e1_i = (u_s[i] as f64) * inv_nu;
+            e1_dot_w += e1_i * w[i];
+        }
+
+        let mut w_norm_sq2 = 0.0_f64;
+        for i in 0..d_u {
+            let e1_i = (u_s[i] as f64) * inv_nu;
+            w[i] -= e1_dot_w * e1_i;
+            w_norm_sq2 += w[i] * w[i];
+        }
+
+        let nw = w_norm_sq2.sqrt();
+        // Guarda de colinealidad relativa estricta: si ||w|| / ||v|| < 1e-8, el plano es singular
         if nw < 1e-8_f64 * nv || !nw.is_finite() {
             for i in 0..d_u { out_s[i] = x_s[i]; }
             return 0;
         }
 
-        // 4. Proyecciones de x en el plano ortonormal (e1, e2)
-        let mut dot_e1_x = 0.0_f64;
-        let mut dot_e2_x = 0.0_f64;
+        let inv_nw = 1.0_f64 / nw;
+
+        // 4. Coordenadas planares a = <e1, x>, b = <e2, x>
+        let mut a = 0.0_f64;
+        let mut b = 0.0_f64;
         for i in 0..d_u {
-            let e1 = (u_s[i] as f64) / nu;
-            let e2 = ((v_s[i] as f64) - e1_dot_v * e1) / nw;
+            let e1_i = (u_s[i] as f64) * inv_nu;
+            let e2_i = w[i] * inv_nw;
             let xi = x_s[i] as f64;
-            dot_e1_x += e1 * xi;
-            dot_e2_x += e2 * xi;
+            a += e1_i * xi;
+            b += e2_i * xi;
         }
 
+        // 5. Rotación 2D exacta de las componentes del plano generador
         let theta_d = theta as f64;
         let cos_t = theta_d.cos();
         let sin_t = theta_d.sin();
 
-        // 5. Rotación exacta en el plano generador del bivector:
-        // x' = x + (cos(theta)-1)*(<e1,x>e1 + <e2,x>e2) + sin(theta)*(<e2,x>e1 - <e1,x>e2)
+        // Variaciones delta en el plano:
+        // delta_a = (cos(theta)-1)*a - sin(theta)*b
+        // delta_b =  sin(theta)*a + (cos(theta)-1)*b
         let c_minus_1 = cos_t - 1.0_f64;
+        let delta_a = c_minus_1 * a - sin_t * b;
+        let delta_b = sin_t * a + c_minus_1 * b;
+
+        // 6. Actualización de rango 2 sobre el vector de estado: x' = x + delta_a * e1 + delta_b * e2
         let mut out_norm_sq = 0.0_f64;
         for i in 0..d_u {
-            let e1 = (u_s[i] as f64) / nu;
-            let e2 = ((v_s[i] as f64) - e1_dot_v * e1) / nw;
+            let e1_i = (u_s[i] as f64) * inv_nu;
+            let e2_i = w[i] * inv_nw;
             let xi = x_s[i] as f64;
-
-            let proj = dot_e1_x * e1 + dot_e2_x * e2;
-            let rot = dot_e2_x * e1 - dot_e1_x * e2;
-            let val = xi + c_minus_1 * proj + sin_t * rot;
+            let val = xi + delta_a * e1_i + delta_b * e2_i;
             out_s[i] = val as f32;
             out_norm_sq += val * val;
         }
 
-        // 6. Normalización de seguridad
+        // 7. Normalización cordal de preservación de esfera unitaria S^{D-1}
         if out_norm_sq > 0.0_f64 && out_norm_sq.is_finite() {
             let inv_n = (1.0_f64 / out_norm_sq.sqrt()) as f32;
             for i in 0..d_u {

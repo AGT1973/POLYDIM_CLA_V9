@@ -482,12 +482,12 @@ pub unsafe extern "C" fn polydim_clifford_rotor_spin_v1150(
 
         // Vector temporal w en heap/stack para reortogonalización precisa
         let mut w = vec![0.0_f64; d_u];
-        let mut w_norm_sq1 = 0.0_f64;
+        let mut _w_norm_sq1 = 0.0_f64;
         for i in 0..d_u {
             let e1_i = (u_s[i] as f64) * inv_nu;
             let wi = (v_s[i] as f64) - e1_dot_v * e1_i;
             w[i] = wi;
-            w_norm_sq1 += wi * wi;
+            _w_norm_sq1 += wi * wi;
         }
 
         // 3. Segunda pasada de reortogonalización (Twice-Is-Enough para cota de pérdida de ortogonalidad <= O(eps))
