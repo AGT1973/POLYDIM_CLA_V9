@@ -23,8 +23,12 @@ import subprocess
 import re
 import base64
 import traceback
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
+
+# Timeout global: si el script completo excede 5 minutos, se auto-termina
+GLOBAL_TIMEOUT_SEC = 300  # 5 min
 
 # ===========================
 # CONFIGURACIÓN GLOBAL
@@ -130,6 +134,7 @@ def task_mail():
     try:
         from google.oauth2.credentials import Credentials
         from googleapiclient.discovery import build
+        import httplib2
     except ImportError:
         log("MAIL: google-api-python-client no instalado. Saltando.")
         return 0
@@ -144,7 +149,9 @@ def task_mail():
 
         try:
             creds = Credentials.from_authorized_user_file(str(token_path), MAIL_SCOPES)
-            service = build('gmail', 'v1', credentials=creds)
+            # Timeout de 30s en HTTP para evitar cuelgues en SSL/DNS
+            http = httplib2.Http(timeout=30)
+            service = build('gmail', 'v1', credentials=creds, http=creds.authorize(http))
 
             results = service.users().messages().list(
                 userId='me', labelIds=['INBOX', 'UNREAD'], maxResults=5
@@ -363,11 +370,21 @@ def task_watchdog():
         json.dumps(current, indent=2), encoding="utf-8"
     )
 
-
 # ===========================
 # MAIN
 # ===========================
+def _watchdog_kill():
+    """Watchdog: si el script cuelga más de GLOBAL_TIMEOUT_SEC, lo mata."""
+    log(f"⚠️ WATCHDOG: Timeout global ({GLOBAL_TIMEOUT_SEC}s) alcanzado — FORZANDO EXIT")
+    os._exit(1)  # os._exit para matar incluso hilos bloqueados en I/O
+
+
 def main():
+    # Armar watchdog global — si algo cuelga, muere en 5 min
+    watchdog = threading.Timer(GLOBAL_TIMEOUT_SEC, _watchdog_kill)
+    watchdog.daemon = True
+    watchdog.start()
+
     log("=" * 60)
     log("POLYDIM Unified Cron — INICIO")
 
@@ -391,6 +408,8 @@ def main():
 
     log("POLYDIM Unified Cron — FIN")
     log("=" * 60)
+
+    watchdog.cancel()  # Desactivar watchdog si terminó limpio
 
 
 if __name__ == "__main__":

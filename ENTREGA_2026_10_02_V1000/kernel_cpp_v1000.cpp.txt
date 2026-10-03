@@ -43,11 +43,12 @@ POLYDIM_EXPORT int32_t polydim_spherical_vlasov_poisson_step_v1000(
 
     #pragma omp parallel for schedule(static)
     for (int32_t i = 0; i < N; ++i) {
-        const float* x = pos + i * D;
-        const float* p = mom + i * D;
-        const float* g = grad_phi + i * D;
-        float* out_x = out_pos + i * D;
-        float* out_p = out_mom + i * D;
+        const size_t offset = static_cast<size_t>(i) * static_cast<size_t>(D);
+        const float* x = pos + offset;
+        const float* p = mom + offset;
+        const float* g = grad_phi + offset;
+        float* out_x = out_pos + offset;
+        float* out_p = out_mom + offset;
 
         float dot_gx = 0.0f;
         for (int32_t k = 0; k < D; ++k) dot_gx += g[k] * x[k];
@@ -82,33 +83,33 @@ POLYDIM_EXPORT int32_t polydim_calogero_sutherland_integrals_v1000(
 ) {
     if (!positions || !momenta || !out_integrals || N <= 0) return -1;
 
-    std::vector<float> L_real(N * N, 0.0f);
-    std::vector<float> L_imag(N * N, 0.0f);
-
-    for (int32_t j = 0; j < N; ++j) {
-        L_real[j * N + j] = momenta[j];
-        for (int32_t k = 0; k < N; ++k) {
-            if (j == k) continue;
-            float diff = positions[j] - positions[k];
-            float sin_val = std::sin(diff);
-            float cot_val = (std::abs(sin_val) > 1e-6f) ? (std::cos(diff) / sin_val) : 0.0f;
-            L_imag[j * N + k] = g_coupling * cot_val;
-        }
-    }
-
+    // Integral I_1 = \sum_j p_j
     float sum_p = 0.0f;
-    for (int32_t j = 0; j < N; ++j) sum_p += momenta[j];
+    for (int32_t j = 0; j < N; ++j) {
+        sum_p += momenta[j];
+    }
     out_integrals[0] = sum_p;
 
-    float sum_l2 = 0.0f;
+    // Integral I_2 = 1/2 \sum_j p_j^2 + g^2 \sum_{j < k} \cot^2(q_j - q_k)
+    float sum_p2 = 0.0f;
     for (int32_t j = 0; j < N; ++j) {
-        for (int32_t k = 0; k < N; ++k) {
-            float re = L_real[j * N + k];
-            float im = L_imag[j * N + k];
-            sum_l2 += (re * re - im * im);
+        sum_p2 += momenta[j] * momenta[j];
+    }
+
+    float sum_pot = 0.0f;
+    const float g2 = g_coupling * g_coupling;
+    for (int32_t j = 0; j < N; ++j) {
+        for (int32_t k = j + 1; k < N; ++k) {
+            float diff = positions[j] - positions[k];
+            float sin_val = std::sin(diff);
+            if (std::abs(sin_val) > 1e-6f) {
+                float cot_val = std::cos(diff) / sin_val;
+                sum_pot += g2 * (cot_val * cot_val);
+            }
         }
     }
-    out_integrals[1] = 0.5f * sum_l2;
+
+    out_integrals[1] = 0.5f * sum_p2 + sum_pot;
     return 0;
 }
 
@@ -120,39 +121,97 @@ POLYDIM_EXPORT int32_t polydim_wen_yin_stiefel_retraction_v1000(
     int32_t D, int32_t K, float tau
 ) {
     if (!X || !G || !out_X || D <= 0 || K <= 0) return -1;
-    std::vector<float> A(K * K, 0.0f);
+
+    // 1. Skew-symmetric generator A = G^T X - X^T G  (K x K)
+    std::vector<double> A(static_cast<size_t>(K) * K, 0.0);
     for (int32_t r = 0; r < K; ++r) {
         for (int32_t c = 0; c < K; ++c) {
-            float sum = 0.0f;
+            double sum = 0.0;
             #pragma omp parallel for reduction(+:sum) schedule(static)
             for (int32_t i = 0; i < D; ++i) {
-                sum += G[i * K + r] * X[i * K + c] - X[i * K + r] * G[i * K + c];
+                const size_t idx_r = static_cast<size_t>(i) * K + r;
+                const size_t idx_c = static_cast<size_t>(i) * K + c;
+                sum += static_cast<double>(G[idx_r]) * static_cast<double>(X[idx_c])
+                     - static_cast<double>(X[idx_r]) * static_cast<double>(G[idx_c]);
             }
-            A[r * K + c] = sum;
+            A[static_cast<size_t>(r) * K + c] = sum;
         }
     }
-    std::vector<float> M(K * K, 0.0f);
+
+    // 2. Linear system (I - tau/2 A) M = (I + tau/2 A)
+    // Setup LHS and RHS matrices
+    std::vector<double> LHS(static_cast<size_t>(K) * K, 0.0);
+    std::vector<double> M(static_cast<size_t>(K) * K, 0.0);
     for (int32_t r = 0; r < K; ++r) {
         for (int32_t c = 0; c < K; ++c) {
-            float I_rc = (r == c) ? 1.0f : 0.0f;
-            M[r * K + c] = I_rc + (tau * 0.5f) * A[r * K + c];
+            double delta = (r == c) ? 1.0 : 0.0;
+            double a_rc = A[static_cast<size_t>(r) * K + c];
+            LHS[static_cast<size_t>(r) * K + c] = delta - 0.5 * tau * a_rc;
+            M[static_cast<size_t>(r) * K + c] = delta + 0.5 * tau * a_rc;
         }
     }
+
+    // Gauss-Jordan elimination on [LHS | M]
+    for (int32_t i = 0; i < K; ++i) {
+        // Pivot
+        int32_t pivot = i;
+        double max_val = std::abs(LHS[static_cast<size_t>(i) * K + i]);
+        for (int32_t row = i + 1; row < K; ++row) {
+            double val = std::abs(LHS[static_cast<size_t>(row) * K + i]);
+            if (val > max_val) {
+                max_val = val;
+                pivot = row;
+            }
+        }
+        if (pivot != i) {
+            for (int32_t col = 0; col < K; ++col) {
+                std::swap(LHS[static_cast<size_t>(i) * K + col], LHS[static_cast<size_t>(pivot) * K + col]);
+                std::swap(M[static_cast<size_t>(i) * K + col], M[static_cast<size_t>(pivot) * K + col]);
+            }
+        }
+
+        double diag = LHS[static_cast<size_t>(i) * K + i];
+        if (std::abs(diag) < 1e-15) diag = (diag >= 0 ? 1e-15 : -1e-15);
+        double inv_diag = 1.0 / diag;
+        for (int32_t col = 0; col < K; ++col) {
+            LHS[static_cast<size_t>(i) * K + col] *= inv_diag;
+            M[static_cast<size_t>(i) * K + col] *= inv_diag;
+        }
+
+        for (int32_t row = 0; row < K; ++row) {
+            if (row == i) continue;
+            double factor = LHS[static_cast<size_t>(row) * K + i];
+            if (std::abs(factor) < 1e-15) continue;
+            for (int32_t col = 0; col < K; ++col) {
+                LHS[static_cast<size_t>(row) * K + col] -= factor * LHS[static_cast<size_t>(i) * K + col];
+                M[static_cast<size_t>(row) * K + col] -= factor * M[static_cast<size_t>(i) * K + col];
+            }
+        }
+    }
+
+    // 3. Matrix product Y = X * M (D x K)
     #pragma omp parallel for schedule(static)
     for (int32_t i = 0; i < D; ++i) {
         for (int32_t c = 0; c < K; ++c) {
-            float val = 0.0f;
+            double val = 0.0;
             for (int32_t r = 0; r < K; ++r) {
-                val += X[i * K + r] * M[r * K + c];
+                val += static_cast<double>(X[static_cast<size_t>(i) * K + r]) * M[static_cast<size_t>(r) * K + c];
             }
-            out_X[i * K + c] = val;
+            out_X[static_cast<size_t>(i) * K + c] = static_cast<float>(val);
         }
     }
+
+    // 4. Normalization / Orthonormalization pass for Stiefel metric invariance
     for (int32_t c = 0; c < K; ++c) {
         float norm_sq = 0.0f;
-        for (int32_t i = 0; i < D; ++i) norm_sq += out_X[i * K + c] * out_X[i * K + c];
+        for (int32_t i = 0; i < D; ++i) {
+            float v = out_X[static_cast<size_t>(i) * K + c];
+            norm_sq += v * v;
+        }
         float inv_norm = 1.0f / std::sqrt(std::max(1e-12f, norm_sq));
-        for (int32_t i = 0; i < D; ++i) out_X[i * K + c] *= inv_norm;
+        for (int32_t i = 0; i < D; ++i) {
+            out_X[static_cast<size_t>(i) * K + c] *= inv_norm;
+        }
     }
     return 0;
 }
@@ -182,31 +241,76 @@ POLYDIM_EXPORT int32_t polydim_nambu_integrator_v1000(
 }
 
 // ----------------------------------------------------------------------------
-// 5. CUANTIZADOR TENSORIAL RETÍCULO DE RAÍCES E8 (GOSSET 4_21) O(1)
+// 5. CUANTIZADOR TENSORIAL CONWAY-SLOANE RETÍCULO DE RAÍCES E8 (GOSSET 4_21) O(1)
 // ----------------------------------------------------------------------------
 POLYDIM_EXPORT int32_t polydim_e8_lattice_quantize_v1000(
     const float* in_vec, float* out_quantized, int32_t D
 ) {
     if (!in_vec || !out_quantized || D <= 0 || (D % 8 != 0)) return -1;
     int32_t num_blocks = D / 8;
+
     #pragma omp parallel for schedule(static)
     for (int32_t b = 0; b < num_blocks; ++b) {
-        const float* x = in_vec + b * 8;
-        float* y = out_quantized + b * 8;
-        float f[8];
-        int32_t sum_f = 0;
-        int32_t worst_idx = 0;
-        float worst_diff = -1.0f;
+        const float* x = in_vec + static_cast<size_t>(b) * 8;
+        float* y = out_quantized + static_cast<size_t>(b) * 8;
+
+        // --- Coset 0: D8+ (Enteros con suma par) ---
+        float f0[8];
+        int32_t sum_f0 = 0;
+        int32_t worst_idx0 = 0;
+        float worst_diff0 = -1.0f;
         for (int32_t i = 0; i < 8; ++i) {
-            f[i] = std::round(x[i]);
-            sum_f += static_cast<int32_t>(f[i]);
-            float diff = std::abs(x[i] - f[i]);
-            if (diff > worst_diff) { worst_diff = diff; worst_idx = i; }
+            f0[i] = std::round(x[i]);
+            sum_f0 += static_cast<int32_t>(f0[i]);
+            float diff = std::abs(x[i] - f0[i]);
+            if (diff > worst_diff0) {
+                worst_diff0 = diff;
+                worst_idx0 = i;
+            }
         }
-        if (std::abs(sum_f) % 2 != 0) {
-            f[worst_idx] += (x[worst_idx] > f[worst_idx]) ? 1.0f : -1.0f;
+        if (std::abs(sum_f0) % 2 != 0) {
+            f0[worst_idx0] += (x[worst_idx0] > f0[worst_idx0]) ? 1.0f : -1.0f;
         }
-        for (int32_t i = 0; i < 8; ++i) y[i] = f[i];
+        float dist0 = 0.0f;
+        for (int32_t i = 0; i < 8; ++i) {
+            float d = x[i] - f0[i];
+            dist0 += d * d;
+        }
+
+        // --- Coset 1: D8+ + 1/2 * 1 (Semienteros con suma par de enteros desplazados) ---
+        float f1[8];
+        int32_t sum_f1 = 0;
+        int32_t worst_idx1 = 0;
+        float worst_diff1 = -1.0f;
+        for (int32_t i = 0; i < 8; ++i) {
+            float x_shifted = x[i] - 0.5f;
+            float r = std::round(x_shifted);
+            sum_f1 += static_cast<int32_t>(r);
+            float diff = std::abs(x_shifted - r);
+            if (diff > worst_diff1) {
+                worst_diff1 = diff;
+                worst_idx1 = i;
+            }
+            f1[i] = r + 0.5f;
+        }
+        if (std::abs(sum_f1) % 2 != 0) {
+            float x_shifted_worst = x[worst_idx1] - 0.5f;
+            float r_worst = std::round(x_shifted_worst);
+            r_worst += (x_shifted_worst > r_worst) ? 1.0f : -1.0f;
+            f1[worst_idx1] = r_worst + 0.5f;
+        }
+        float dist1 = 0.0f;
+        for (int32_t i = 0; i < 8; ++i) {
+            float d = x[i] - f1[i];
+            dist1 += d * d;
+        }
+
+        // Elegir el coset más cercano (Conway-Sloane E8)
+        if (dist1 < dist0) {
+            for (int32_t i = 0; i < 8; ++i) y[i] = f1[i];
+        } else {
+            for (int32_t i = 0; i < 8; ++i) y[i] = f0[i];
+        }
     }
     return 0;
 }
@@ -219,64 +323,80 @@ POLYDIM_EXPORT int32_t polydim_marsden_weinstein_reduction_v1000(
     int32_t D, int32_t K
 ) {
     if (!Q || !P || !out_Q || !out_P || D <= 0 || K <= 0) return -1;
-    std::vector<float> J(K * K, 0.0f);
+    std::vector<float> J(static_cast<size_t>(K) * K, 0.0f);
     for (int32_t r = 0; r < K; ++r) {
         for (int32_t c = 0; c < K; ++c) {
             float sum = 0.0f;
             #pragma omp parallel for reduction(+:sum) schedule(static)
             for (int32_t i = 0; i < D; ++i) {
-                sum += Q[i * K + r] * P[i * K + c] - P[i * K + r] * Q[i * K + c];
+                const size_t idx_r = static_cast<size_t>(i) * K + r;
+                const size_t idx_c = static_cast<size_t>(i) * K + c;
+                sum += Q[idx_r] * P[idx_c] - P[idx_r] * Q[idx_c];
             }
-            J[r * K + c] = sum;
+            J[static_cast<size_t>(r) * K + c] = sum;
         }
     }
     #pragma omp parallel for schedule(static)
     for (int32_t i = 0; i < D; ++i) {
         for (int32_t c = 0; c < K; ++c) {
-            out_Q[i * K + c] = Q[i * K + c];
+            const size_t idx = static_cast<size_t>(i) * K + c;
+            out_Q[idx] = Q[idx];
             float corr = 0.0f;
-            for (int32_t r = 0; r < K; ++r) corr += 0.5f * J[r * K + c] * Q[i * K + r];
-            out_P[i * K + c] = P[i * K + c] - corr;
+            for (int32_t r = 0; r < K; ++r) {
+                corr += 0.5f * J[static_cast<size_t>(r) * K + c] * Q[static_cast<size_t>(i) * K + r];
+            }
+            out_P[idx] = P[idx] - corr;
         }
     }
     return 0;
 }
 
 // ----------------------------------------------------------------------------
-// 7. HOLONOMÍA NO ABELIANA DE WILCZEK-ZEE EN GRASSMANNIANAS
+// 7. HOLONOMÍA NO ABELIANA DE WILCZEK-ZEE EN GRASSMANNIANAS (ZERO-ALLOC HOT LOOP)
 // ----------------------------------------------------------------------------
 POLYDIM_EXPORT int32_t polydim_wilczek_zee_holonomy_v1000(
     const float* U_path, float* out_holonomy,
     int32_t steps, int32_t D, int32_t K
 ) {
     if (!U_path || !out_holonomy || steps <= 1 || D <= 0 || K <= 0) return -1;
-    std::vector<float> H(K * K, 0.0f);
-    for (int32_t i = 0; i < K; ++i) H[i * K + i] = 1.0f;
+    const size_t k_sq = static_cast<size_t>(K) * K;
+    const size_t step_stride = static_cast<size_t>(D) * K;
+
+    std::vector<float> H(k_sq, 0.0f);
+    std::vector<float> A(k_sq, 0.0f);
+    std::vector<float> H_next(k_sq, 0.0f);
+
+    for (int32_t i = 0; i < K; ++i) H[static_cast<size_t>(i) * K + i] = 1.0f;
+
     for (int32_t s = 0; s < steps - 1; ++s) {
-        const float* U0 = U_path + s * (D * K);
-        const float* U1 = U_path + (s + 1) * (D * K);
-        std::vector<float> A(K * K, 0.0f);
+        const float* U0 = U_path + static_cast<size_t>(s) * step_stride;
+        const float* U1 = U_path + static_cast<size_t>(s + 1) * step_stride;
+
         for (int32_t r = 0; r < K; ++r) {
             for (int32_t c = 0; c < K; ++c) {
                 float sum = 0.0f;
-                for (int32_t i = 0; i < D; ++i) sum += U0[i * K + r] * (U1[i * K + c] - U0[i * K + c]);
-                A[r * K + c] = sum;
+                for (int32_t i = 0; i < D; ++i) {
+                    const size_t idx_r = static_cast<size_t>(i) * K + r;
+                    const size_t idx_c = static_cast<size_t>(i) * K + c;
+                    sum += U0[idx_r] * (U1[idx_c] - U0[idx_c]);
+                }
+                A[static_cast<size_t>(r) * K + c] = sum;
             }
         }
-        std::vector<float> H_next(K * K, 0.0f);
+
         for (int32_t r = 0; r < K; ++r) {
             for (int32_t c = 0; c < K; ++c) {
                 float val = 0.0f;
                 for (int32_t k = 0; k < K; ++k) {
-                    float step_factor = (k == c ? 1.0f : 0.0f) - A[k * K + c];
-                    val += H[r * K + k] * step_factor;
+                    float step_factor = (k == c ? 1.0f : 0.0f) - A[static_cast<size_t>(k) * K + c];
+                    val += H[static_cast<size_t>(r) * K + k] * step_factor;
                 }
-                H_next[r * K + c] = val;
+                H_next[static_cast<size_t>(r) * K + c] = val;
             }
         }
         H = H_next;
     }
-    std::memcpy(out_holonomy, H.data(), K * K * sizeof(float));
+    std::memcpy(out_holonomy, H.data(), k_sq * sizeof(float));
     return 0;
 }
 
